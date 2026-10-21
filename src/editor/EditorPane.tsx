@@ -38,13 +38,15 @@ import type { Diagnostic as CmDiagnostic } from '@codemirror/lint';
 import { latexLanguage } from './latexLanguage';
 import { makeLatexCompletionSource } from './completions';
 import { editorHighlighting, editorTheme } from './theme';
+import { completionAppearance, completionTheme } from './completionAppearance';
 import { focusMode, typewriterMode, visualLatex, type VisualContext } from './visual';
-import type { CursorInfo, Diagnostic, ProjectSymbols, Settings } from '../types';
+import type { CursorInfo, Diagnostic, ProjectSymbols, Settings, SourceJump } from '../types';
 import { dirname } from '../lib/latex';
 import { findSpellingIssues } from '../lib/spellcheck';
 import { smartPaste } from '../lib/pasteCleaner';
 
 export interface EditorHandle {
+  getPath: () => string;
   gotoLine: (line: number, column?: number) => void;
   insert: (template: string) => void;
   wrapSelection: (before: string, after: string) => void;
@@ -80,7 +82,7 @@ interface Props {
   onPasteImage?: (file: File) => void;
   onDropFiles?: (files: File[]) => void;
   spellWords?: Set<string>;
-  gotoRequest?: { line: number; column?: number; key: number; flash?: boolean } | null;
+  gotoRequest?: SourceJump | null;
   collabExtension?: Extension | null;
 }
 
@@ -309,14 +311,17 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
         rectangularSelection(),
         crosshairCursor(),
         autocompletion({
+          ...completionAppearance,
           override: [completionSource],
           activateOnTyping: true,
           maxRenderedOptions: 80,
           defaultKeymap: false,
         }),
+        completionTheme,
         foldGutter({ openText: '⌄', closedText: '›' }),
         highlightSelectionMatches(),
         keymap.of([
+          ...completionKeymap,
           {
             key: 'ArrowDown',
             run: (view) => moveLogicalLine(view, 1, false),
@@ -373,7 +378,6 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
           ...searchKeymap,
           ...historyKeymap,
           ...foldKeymap,
-          ...completionKeymap,
           ...lintKeymap,
           indentWithTab,
         ]),
@@ -552,12 +556,15 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !props.gotoRequest) return;
+    if (props.gotoRequest.file && props.gotoRequest.file.replaceAll('\\', '/') !== props.path.replaceAll('\\', '/')) return;
     const lineNumber = Math.max(1, Math.min(view.state.doc.lines, props.gotoRequest.line));
     const info = view.state.doc.line(lineNumber);
     const column = Math.max(1, props.gotoRequest.column || 1);
     const pos = Math.min(info.to, info.from + column - 1);
+    const end = view.state.doc.line(Math.max(lineNumber, Math.min(view.state.doc.lines, props.gotoRequest.endLine || lineNumber)));
+    const selection = props.gotoRequest.select ? { anchor: info.from, head: end.to } : { anchor: pos };
     view.dispatch({
-      selection: { anchor: pos },
+      selection,
       effects: [
         EditorView.scrollIntoView(pos, { y: 'center' }),
         ...(props.gotoRequest.flash ? [flashEffect.of(lineNumber)] : []),
@@ -565,9 +572,10 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     });
     view.focus();
     if (props.gotoRequest.flash) {
-      window.setTimeout(() => view.dispatch({ effects: flashEffect.of(-1) }), 1600);
+      const timer = window.setTimeout(() => { if (viewRef.current === view) view.dispatch({ effects: flashEffect.of(-1) }); }, 1600);
+      return () => window.clearTimeout(timer);
     }
-  }, [props.gotoRequest?.key]);
+  }, [props.gotoRequest?.key, props.path]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -593,6 +601,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
   useImperativeHandle(
     ref,
     () => ({
+      getPath: () => props.path,
       gotoLine(line: number, column = 1) {
         const view = viewRef.current;
         if (!view) return;
@@ -777,7 +786,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
         });
       },
     }),
-    [],
+    [props.path],
   );
 
   useEffect(() => {

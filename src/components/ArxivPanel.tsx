@@ -52,7 +52,7 @@ export function ArxivPanel({ open, projectRoot, onClose, onOpen, onReveal }: Pro
         <div className="arxiv-body">
           <div className="arxiv-icon"><Package size={42} /></div>
           <h3>{t('Create an arXiv-ready source archive')}</h3>
-          <p>{t('The package keeps the source tree and assets, removes build files and auxiliary files, and copies the detected root to main.tex when needed.')}</p>
+          <p>{t('The package preserves the project main file and source paths, removes build files, and records the entry and engine in its README.')}</p>
           <ul className="arxiv-list">
             <li>{t('Excludes .texpro, build products, logs, aux and SyncTeX files')}</li>
             <li>{t('Keeps assets, .bib files and included .tex files')}</li>

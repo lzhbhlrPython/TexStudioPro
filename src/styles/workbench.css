@@ -1,0 +1,40 @@
+/* Focused workbench refinements; shared theme tokens remain in app.css. */
+.workbench-tools-btn { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 10px; color: var(--text-muted); border-radius: 6px; font-size: 12px; }
+.workbench-tools-btn:hover { background: var(--panel-alt); color: var(--text); }
+.workbench-tools-btn kbd { margin-left: 6px; color: var(--text-muted); font-size: 10px; }
+.workbench-menu { display: flex; flex-direction: column; width: min(430px, calc(100vw - 32px)); padding: 0; max-height: min(720px, calc(100vh - 80px)); overflow: hidden; }
+.workbench-menu-search { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); color: var(--text-muted); }
+.workbench-menu-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font-size: 14px; outline: none; }
+.workbench-menu-groups { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.workbench-menu-groups button { padding: 5px 8px; border-radius: 5px; font-size: 12px; color: var(--text-muted); }
+.workbench-menu-groups button:hover { background: var(--panel-alt); color: var(--text); }
+.workbench-menu-groups button.active { background: var(--accent-soft); color: var(--accent-strong); }
+.workbench-menu-list { min-height: 0; overflow: auto; padding: 5px 8px 12px; }
+.workbench-menu-list .more-group { font-size: 11px; padding: 14px 10px 6px; color: var(--text-muted); }
+.workbench-menu-list .more-row { min-height: 36px; font-size: 13px; padding-inline: 10px; }
+.workbench-menu-list .more-row:focus-visible { background: var(--accent-soft); outline: 2px solid var(--accent); outline-offset: -2px; }
+.workbench-menu-footer { display: flex; justify-content: space-between; gap: 16px; padding: 10px 16px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--border); }
+.workbench-menu-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 32px 18px; color: var(--text-muted); font-size: 13px; text-align: center; }
+.workbench-menu-empty strong { color: var(--text); }
+.tool-recovery { position: relative; width: min(460px, calc(100vw - 40px)); padding: 40px 32px 28px; border-radius: 14px; background: var(--panel); color: var(--text); box-shadow: var(--shadow-lg); }
+.tool-recovery h2 { font-size: 18px; margin: 20px 0 10px; }
+.tool-recovery p { color: var(--text-muted); font-size: 14px; line-height: 1.7; }
+.tool-recovery > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.tool-recovery-close { position: absolute; top: 12px; right: 12px; }
+@media (max-width: 1100px) { .workbench-tools-btn kbd { display: none; } }
+.project-main-file { padding: 8px 13px 14px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.project-main-file label { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 11px; font-weight: 600; margin-bottom: 8px; }
+.project-main-file label small { font-size: 10px; font-weight: 400; color: var(--text-muted); }
+.project-main-file select { width: 100%; min-height: 30px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel); color: var(--text); font-family: var(--font-mono); font-size: 11px; text-overflow: ellipsis; }
+.project-main-file select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.project-main-file p { margin: 8px 0 0; font-size: 11px; line-height: 1.7; color: var(--text-muted); }
+.project-main-file.needs-selection select { border-color: var(--accent); }
+.titlebar-main-file { display: flex; align-items: center; gap: 7px; max-width: min(230px, 23vw); min-height: 30px; padding: 4px 8px; font-size: 11px; color: var(--text-muted); border-radius: 4px; }
+.titlebar-main-file:hover { background: var(--panel-alt); }
+.titlebar-main-file strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px var(--font-mono); color: var(--text); }
+.titlebar-main-file > span { flex-shrink: 0; }
+.titlebar-main-file.needs-selection { color: var(--accent); }
+@media (max-width: 1100px) { .titlebar-main-file > span { display: none; } .titlebar-main-file { max-width: 140px; } }
+.project-root-details { margin-top: 8px; color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.project-root-details summary { cursor: pointer; }
+.project-config-error { margin: 12px 20px; color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }

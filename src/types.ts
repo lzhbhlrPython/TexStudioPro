@@ -18,6 +18,9 @@ export interface Project {
   name: string;
   tree: FileNode[];
   rootFile: string | null;
+  rootCandidates?: string[];
+  rootSource?: 'configured' | 'detected' | 'ambiguous' | 'missing' | 'invalid';
+  rootError?: string | null;
 }
 
 export interface BoxHotspot {
@@ -102,7 +105,19 @@ export interface SyncTarget {
   y: number;
   width?: number | null;
   height?: number | null;
+  bounds?: { x: number; y: number; width: number; height: number };
+  manual?: boolean;
   key: number;
+}
+
+export interface SourceJump {
+  file?: string;
+  line: number;
+  column?: number;
+  endLine?: number;
+  select?: boolean;
+  key: number;
+  flash?: boolean;
 }
 
 export interface AppInfo {
@@ -185,6 +200,7 @@ export interface ProjectModule {
 }
 
 export interface ProjectConfig {
+  rootFile?: string;
   directories: {
     modules: string;
     assets: string;

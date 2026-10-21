@@ -17,6 +17,7 @@ export const defaultProjectConfig: ProjectConfig = {
 export function normalizeProjectConfig(input: unknown): ProjectConfig {
   const value = (input && typeof input === 'object' ? input : {}) as Partial<ProjectConfig>;
   return {
+    ...(typeof value.rootFile === 'string' ? { rootFile: value.rootFile } : {}),
     directories: {
       modules: sanitizeRelative(value.directories?.modules, defaultProjectConfig.directories.modules),
       assets: sanitizeRelative(value.directories?.assets, defaultProjectConfig.directories.assets),

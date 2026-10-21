@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileCode2, Play, Plus, RotateCcw, Save, Terminal, Trash2, X } from 'lucide-react';
-import { defaultActions, expandActionArgs, parseActions, resolveTxsCommand, type ProjectAction } from '../lib/actions';
+import { defaultActions, parseActions, resolveTxsCommand, type ProjectAction } from '../lib/actions';
 import { parseCwl, parseMacros, type CwlCompletion } from '../lib/cwl';
 import { useI18n } from '../i18n';
 
@@ -8,6 +8,7 @@ interface Props {
   open: boolean;
   projectRoot: string | null;
   rootFile: string | null;
+  onBeforeRun: () => Promise<boolean>;
   actions: ProjectAction[];
   customCompletions: CwlCompletion[];
   onClose: () => void;
@@ -15,7 +16,7 @@ interface Props {
   onCompletionsChange: (items: CwlCompletion[]) => void;
 }
 
-export function CommandStudio({ open, projectRoot, rootFile, actions, customCompletions, onClose, onActionsChange, onCompletionsChange }: Props) {
+export function CommandStudio({ open, projectRoot, rootFile, onBeforeRun, actions, customCompletions, onClose, onActionsChange, onCompletionsChange }: Props) {
   const { t } = useI18n();
   const [tab, setTab] = useState<'completions' | 'actions'>('actions');
   const [selectedId, setSelectedId] = useState(actions[0]?.id || '');
@@ -70,9 +71,10 @@ export function CommandStudio({ open, projectRoot, rootFile, actions, customComp
     setOutput('');
     setNotice('');
     try {
+      if (!(await onBeforeRun())) return;
       const result = await window.texpro.runProjectAction(projectRoot, {
         command: resolveTxsCommand(selected.command),
-        args: expandActionArgs(selected, { rootFile, rootName: rootFile.split('/').pop()?.replace(/\.[^.]+$/, '') || 'main' }),
+        args: selected.args,
         cwd: selected.cwd,
         env: selected.env,
       }, rootFile);
@@ -158,7 +160,7 @@ export function CommandStudio({ open, projectRoot, rootFile, actions, customComp
                     <label className="workshop-field"><span>{t('Arguments')}</span><input value={selected.args.join(' ')} onChange={(event) => updateAction({ args: event.target.value.split(/\s+/).filter(Boolean) })} placeholder="-pdf -synctex=1 {rootFile}" /></label>
                     <label className="workshop-field"><span>{t('Working directory')}</span><input value={selected.cwd || ''} onChange={(event) => updateAction({ cwd: event.target.value })} placeholder="." /></label>
                   </div>
-                  <p className="schematic-hint">{t('Use {rootFile}, {rootName} or {projectRoot}. txs:/// references are resolved to the matching executable.')}</p>
+                  <p className="schematic-hint">{t('Use {rootFile}, {rootName}, {buildDir} or {projectRoot}. txs:/// references are resolved to the matching executable.')}</p>
                   <div className="action-buttons">
                     <button className="primary-btn" onClick={() => void run()} disabled={busy || !rootFile}><Play size={12} /> {busy ? t('Running…') : t('Run action')}</button>
                     <button className="secondary-btn" onClick={() => void saveActions(actions)}><Save size={12} /> {t('Save actions')}</button>

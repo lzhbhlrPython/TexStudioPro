@@ -49,16 +49,18 @@ TeXPro 不是 Markdown 编辑器，也不是把 PDF 截图贴到编辑器里的�
 
 ![Tables and figures](docs/screenshots/tables.png)
 
-- 打开文件夹作为项目；自动寻找 `\documentclass` 根文件
-- 支持 `% !TeX root = ...` 与 `% !TeX program = ...`
+- 打开文件夹作为工程；只有一个包含 `\documentclass` 的候选时自动识别，多个候选时在侧栏明确选择主文件
+- 主文件固定在 `.texpro/project.json` 的 `rootFile`；编辑标签及子文件的 `% !TeX root` 不会覆盖工程入口；支持 `% !TeX program = ...` 选择引擎
 - `latexmk` 构建，支持 pdfLaTeX / XeLaTeX / LuaLaTeX
-- 输出到 `<project>/.texpro/build/`，不污染源目录
+- 编译前保存所有已修改文件，输出到 `<project>/.texpro/build/`，可通过工程配置的 `directories.build` 修改
+- 标题栏与侧栏同时显示主文件；结构、版式、宏包、MCP 和工具链动作共用同一入口
 - 编译日志流式显示；解析错误、警告、Overfull/Underfull
 - 点击 Problems 条目跳到对应文件/行；CodeMirror lint gutter 标记
 - 自动保存、自动编译（默认开启，2.2 秒防抖）
 - 编译可随时取消：标题栏编译按钮在构建中变为「取消」，主进程终止整个 latexmk 进程组
 - 文件树、当前文件 Outline、跨项目搜索、项目符号索引
 - `\ref{` / `\cite{` / `\begin{` / `\usepackage{` / `\includegraphics{` 项目感知补全
+- 补全列表沿用 Paper / Night / Studio 的面板、字体和柔和选中态；方向键选择、Enter 插入、Esc 关闭
 
 ### 模板与多语种排版
 
@@ -187,9 +189,12 @@ TeXPro 不是 Markdown 编辑器，也不是把 PDF 截图贴到编辑器里的�
 ### PDF 与 SyncTeX
 
 - PDF.js 连续页渲染，页码、缩放、适应宽度、打开/定位 PDF；默认收起，避免打断写作
-- 编译成功后，光标停稳 → `synctex view` → 只在标记离开视口时平滑滚动，避免每按一次方向键就抖动
+- 编译成功后，光标停稳 → `synctex view` → 只在对应文字盒子离开视口时滚动；自动跟随直接定位，手动定位平滑滚动
 - 同步横幅显示页码 + 源码行号；反向搜索后编辑器对应行会短暂高亮
-- 在 PDF 页面 **⌘-click** → `synctex edit` → 打开源文件并定位行
+- 在 PDF 页面 **⌘ / Ctrl-click** → `synctex edit` → 打开源文件，选中并短暂高亮对应源码行
+- 点击 PDF 工具栏的框选按钮，或按住 **⌘ / Ctrl** 拖框：按区域内文字行取样，选中对应源码范围；Esc 退出。保留普通拖动选择/复制文本
+- 定位盒子统一换算缩放、页面裁切和旋转坐标；重新编译同一文档保留 PDF 页码、缩放和滚动位置
+- SyncTeX 定位精度取决于排版产生的映射，框选是源码行级范围；选区涉及多个文件时打开匹配最多的文件并提示
 - 文字层可选择/复制；双页视图、演示模式、缩略图；与上次编译结果叠加 diff
 - 可在设置中关闭「PDF follows cursor」
 - 方向键按逻辑行前进，遇到公式/表格等视觉块不会整块跳过；视觉重建合并到下一帧，输入优先
@@ -283,6 +288,7 @@ TeXPro 不是 Markdown 编辑器，也不是把 PDF 截图贴到编辑器里的�
 `.github/workflows/nightly.yml` builds and publishes a prerelease automatically:
 
 - Schedule: **03:17 UTC** daily (11:17 Asia/Shanghai), plus `workflow_dispatch`.
+- Both triggers first check the **current calendar day in Asia/Shanghai**. Only commits with actual file changes on the checked-out branch count (committer time, first-parent history); empty commits do not. With no qualifying commit, tests, packaging and publication are skipped.
 - macOS: universal DMG + ZIP, unsigned.
 - Windows: NSIS installer + portable EXE + ZIP, x64.
 - Ubuntu: `.deb` + AppImage, x64.
@@ -362,9 +368,22 @@ npm start
 点击左上角项目名 / `⌘O`，选择一个包含 `.tex` 的文件夹。TeXPro 会：
 
 1. 递归建立文件树（忽略 `.git`、`node_modules`、`.texpro` 等）
-2. 寻找根 `.tex`
-3. 打开根文件或在文件树中点击其他文件
-4. 读取最新一次 `.texpro/build/*.pdf`（如果存在）
+2. 优先使用 `.texpro/project.json` 的 `rootFile`；没有配置时，只接受唯一的 `\documentclass` 候选
+3. 多个候选时提示选择；配置失效、文件丢失或内容不再包含 `\documentclass` 时提示错误，不自动换用另一篇文档
+4. 打开主文件或在文件树中编辑章节，载入该主文件在配置构建目录中的 PDF（如果存在）
+
+侧栏的「主文件」下拉框会把选择保存为相对路径，例如：
+
+```json
+{
+  "rootFile": "paper.tex",
+  "directories": { "build": ".texpro/build" }
+}
+```
+
+选择会保留其他工程配置；重命名或移动主文件及其所在目录时更新路径。结构、版式和宏包设置会先打开主文件再应用。工具链动作的 `{rootFile}`、`{rootName}`、`{buildDir}` 在服务端根据当前工程配置解析；直接导出 Markdown/Typst/HTML 仍明确转换当前编辑文档。
+
+点击左上角 Logo、更多菜单的「关闭工程并返回欢迎页」，或 `⌘⇧W` / `Ctrl+Shift+W`，可结束当前工程。关闭前保存所有修改；保存失败时保留工程。正在编译时会取消构建，延迟返回的 PDF 和同步结果不会重新打开工程。Welcome 保留最近工程，沿用 Paper / Night / Studio 主题，提供工程搜索、新建、打开和示例入口。
 
 ---
 
@@ -376,6 +395,7 @@ npm start
 | 保存 | `⌘ S` |
 | 命令面板 | `⌘ K` |
 | 打开项目 | `⌘ O` |
+| 关闭工程并返回 Welcome | `⌘ ⇧ W` |
 | 前向搜索 | `⌘ ⇧ J` |
 | 视觉 / 源码 | `⌘ ⇧ M` |
 | Focus mode | `⌘ ⇧ F` |
@@ -438,15 +458,23 @@ PDF 反向搜索：**⌘-click**（Windows/Linux 为 Ctrl-click）。
 
 ```text
 electron/
-  main.cjs                 # BrowserWindow, IPC, protocol, menu, smoke test
+  main.cjs                 # BrowserWindow, IPC, protocol, menu
+  smoke.cjs / regression.cjs # isolated integration / UI checks
   preload.cjs              # contextBridge API
   services/tex.cjs         # project scan, latexmk, diagnostics, SyncTeX
+  services/history.cjs     # local snapshots with Git boundary checks
+  services/git.cjs         # Git and Overleaf operations
+  services/project-files.cjs # shared file filters
+  services/project-root.cjs # one main-file policy across the toolchain
 src/
   App.tsx                  # state, project lifecycle, palette actions
+  app/                     # settings, project helpers, deferred tools
+  hooks/                   # preview lifecycle and dialog keyboard focus
   editor/
     EditorPane.tsx         # CodeMirror 6 instance + compartments
     visual.ts              # StateField decorations + widgets + focus/typewriter
     completions.ts         # commands, environments, labels, cites, images
+    completionAppearance.ts # themed completion list and consistent icons
     latexLanguage.ts       # StreamLanguage
     theme.ts               # CodeMirror theme + widget CSS
   components/              # TitleBar, Sidebar, PdfPane, studios, BibManager...
@@ -460,12 +488,15 @@ src/
   lib/ai.ts                # optional OpenAI-compatible client
   lib/symbols.ts           # modular KaTeX-rendered symbol catalog
   lib/formulaAst.ts        # formula AST, parser and LaTeX serializer
+  lib/schematic.ts         # circuit, logic, structure models and LaTeX
   lib/bib.ts               # BibTeX parser/serializer
   lib/projectConfig.ts     # modules/directories/TOC config
   styles/app.css           # Paper/Night/Studio + native macOS materials
 demo/                      # self-contained example project
 scripts/
   test-compile.mjs         # compile + SyncTeX + diagnostics integration test
+  test-ui.cjs              # real Electron gestures and autocomplete
+  verify-release.cjs       # renderer entry assets and ASAR validation
   make-demo-image.mjs      # generates demo/assets/curve.png
 mcp/
   server.mjs               # standalone stdio MCP server
@@ -473,6 +504,7 @@ mcp/
 build/
   icon.svg / icon.png / icon.icns
 docs/
+  architecture.md          # module boundaries and maintenance notes
   screenshots/
 ```
 
@@ -497,122 +529,23 @@ docs/
 ## 测试
 
 ```bash
-npm run typecheck
-npm run build
-npm run test:compile
-npm run test:import
-npm run test:mcp
-npm run smoke
-npm run smoke:welcome
+npm run typecheck          # React/TypeScript
+npm run build              # 生产构建和按需加载的工具模块
+npm run test:regression    # 无 TeX 依赖：历史、Git 边界、图形缓存、发布资源和 ASAR
+npm run test:compile       # 19 项：多引擎、TikZ、SyncTeX、取消与错误定位
+npm run test:import        # 12 项：导入、模板、项目操作、PDF diff、AI 流式响应
+npm run test:mcp           # stdio 协议、工具、资源、提示与诊断
+npm run test:ui            # 已构建前端；真实鼠标拖拽、撤销、失焦、缩放与恢复
+npm run smoke              # 完整桌面功能巡检及截图
+npm run smoke:welcome      # 欢迎页截图
+npm run verify:release     # 检查当前构建的入口、资源与 PDF worker
 ```
 
-`npm run test:compile` 实际调用本机 TeX Live，当前结果：
+`test:regression` 可在不安装 TeX 的 CI 环境运行。编译与导入测试需要本地 TeX Live、宏包和对应字体；导入测试会监听随机回环端口。桌面测试需要图形会话。操作系统沙箱限制字体、端口或 GUI 时，应区分环境阻断与应用失败。
 
-```text
-PASS  demo compiles  157 ms
-PASS  demo produces PDF
-PASS  demo has no errors
-PASS  forward SyncTeX resolves page and coordinates  page 1, y 334.9
-PASS  inverse SyncTeX returns the matching area  line 32
-PASS  project labels are indexed  3 labels
-PASS  bibliography keys are indexed  1 citations
-PASS  figure assets are indexed  1 images
-PASS  project search finds source matches  2 matches
-PASS  TikZ renders to an image  102309 bytes
-PASS  TikZ output is a readable PNG
-PASS  ctex compiles with detected engine  xelatex
-PASS  japanese compiles with detected engine  lualatex
-PASS  arabic compiles with detected engine  xelatex
-PASS  compile cancellation is accepted  SIGTERM sent
-PASS  cancelled compile reports cancelled  Compilation cancelled.
-PASS  no compilation remains active
-PASS  broken document fails cleanly
-PASS  broken document reports an error with a line  line 3: Undefined control sequence.
-19/19 checks passed
-```
+`test:ui` 使用独立临时用户目录，结束后清理。`smoke` 默认使用 `.texpro-userdata/`，可用 `TEXPRO_USER_DATA` 指定隔离目录；巡检会修改其中的演示工程并保存模板，截图写入 `artifacts/`。关键断言或脚本异常会返回非零退出码。截图成功只说明流程执行，不能替代所有功能的验收。
 
-`npm run test:import` 会编译转换器产出的 Markdown / Typst / 设计模板：
-
-```text
-PASS  markdown import compiles
-PASS  typst import compiles
-PASS  article design compiles
-PASS  ctex design compiles
-PASS  beamer design compiles
-PASS  image buffer is saved as an asset
-PASS  rename updates \input references
-PASS  directory move updates references
-PASS  orphan TeX file is detected
-PASS  agent actions are parsed safely
-PASS  AI streaming assembles deltas
-PASS  PDF pixel diff marks red/green
-
-12/12 checks passed
-```
-
-`npm run test:mcp` 会启动真实 stdio server 并验证：
-
-```text
-PASS  MCP initialize
-PASS  MCP tools are listed  16 tools
-PASS  MCP project info
-PASS  MCP project search  3 results
-PASS  MCP read file  4246 bytes
-PASS  MCP project doctor
-
-MCP checks passed
-```
-
-`npm run smoke` 会启动真实 Electron 窗口，执行并验证：
-
-- 打开 demo、自动编译、加载 PDF
-- 渲染公式 / 表格 / 图片 / 标题 / preamble
-- 点击 display math widget，确认 DOM 中公式 widget 数量下降（源码被还原）
-- 点击 PDF 页面执行反向搜索，确认光标跳到源码
-- 切换到 Source，确认视觉 widget 全部消失
-- 打开模板库、pgfplots Studio、TikZ Studio、页面版式、公式编辑器（代码 + AST）、素材库
-- 符号库渲染 144 个 KaTeX 符号；文件预览；BibTeX 管理器；项目结构
-- Markdown 导入生成 `\section`；模板设计工坊生成 `\documentclass`；均可编译
-- 创建模块并应用目录/TOC；应用版式并验证 toast；切换 English 并验证 `documentElement.lang`
-- 输出截图到 `artifacts/`
-
-当前 smoke 结果：
-
-```text
-dom    pages=3 after opening PDF, math=4, preamble=1, title=1
-lower  tables=1, images=1, labels=2
-math   before=4, after=3  (widget click reveals source)
-inverse cursor = Ln 22  (⌘-click PDF jumps to source)
-chart  preview=true, busy=false
-tikz   modal preview=true, inline widget=1 with image
-source widgets = 0
-formula-ast tree=true, nodes 12→13, symbol insertion works
-symbols modules=9, rendered=144
-file-preview open=true, image=true
-bib entries=2
-project-studio open=true
-comments open=true
-ai open=true
-export open=true, preview=true
-doctor open=true, tools=9, issues=0
-import open=true, generated=true, hasSection=true
-workshop open=true, code=true
-workshop-save closed=true, toast=模板已保存
-table-editor hasTable=true, open=true
-pdf-search open=true, hits=1/1
-pdf-thumbs rails=1, thumbs=3
-pdf-features textSpans=192, spread=true, diffEnabled=true
-pdf-diff diffVisible=true
-template-preview thumb=true, busy=false
-comments open=true, items=1, canExport=true
-layout applied toast = 版式已应用
-english language = en / Preferences
-project-apply toast = Module created, closed=true
-mcp open=true, configured=true, tools=16
-compiled status = ~95–260 ms (warm latexmk)
-```
-
----
+打包提供前后两层校验：`beforePack` 拒绝缺少前端资源的构建，`afterPack` 检查实际 `app.asar`；也可以运行 `node scripts/verify-release.cjs /path/to/app.asar` 手动检查。Nightly 的每个平台任务独立运行前端构建，不依赖其他 job 的文件系统。
 
 ## 近期新增
 
@@ -660,31 +593,23 @@ compiled status = ~95–260 ms (warm latexmk)
 
 ## 限制与路线图
 
-这是一个**可运行的 MVP**，不是 TeXstudio 的功能等价替代。明确未实现：
+TeXPro 是持续迭代中的桌面工作台。可视编辑、表格编辑、公式 AST、文献管理、可取消编译、PDF 搜索/文本层、Git、项目宏/动作和局域网协作均已有实现；这些能力仍需要更多真实工程验证。
 
-- 拼写检查 / 语法检查
-- 项目级（跨 include）Outline；当前 Outline 是当前文件
-- 可视化表格单元格编辑（当前是只读预览 + 点击回源码）
-- 完整 bib 管理器、BibTeX/Biber 构建链 UI
-- 宏/脚本系统、Git/SVN 集成、多文件模板
-- 单文档编辑；通过文件树切换文件（没有多标签页）
-- 编译取消、并发构建队列
-- PDF 文本选择/搜索、打印、导出
-- 非 UTF-8 文件
-- `-shell-escape` / minted 等需要 shell escape 的包（出于安全默认不开启）
-- Windows/Linux 的实机验证
-- 超大型文档（>10k 行）的 decoration 增量优化
-- 公式编辑器是「源码 + 符号面板 + KaTeX 预览」，不是结构化 AST 拖拽编辑器
-- pgfplots Studio 覆盖常用二维图；3D、统计图、误差棒等尚未进入 UI
-- 阿拉伯文 / 日文模板依赖 macOS 自带字体（Al Nile / Hiragino）；跨平台需要替换字体
+当前边界：
 
-路线图优先级：
+- 可视层以语义组件呈现常用 LaTeX，最终版式以 TeX 编译后的 PDF 为准；不保证任意自定义宏都能直接可视化。
+- 大纲以活动文件为主；超大型文档的可视 decoration 尚未全面增量化。
+- 支持多文件工程与切换文件，尚无完整的多标签编辑体验；源文件以 UTF-8 为主。
+- MCP Crew 是单轮巡检与提案审批，缺少多轮状态机、持久审计和撤销。
+- Writing Room 是文件级局域网协作，切换文件会结束会话；访客权限、离线重连和项目级房间仍待实现。
+- Referee 使用确定性检查规则；插件市场提供补全包及 MCP 配置入口，尚无完整远程安装/版本管理。
+- 项目处于 Git 仓库内时停止内部快照写入，已有快照仍可审阅。Git 初始化/移除后的写入边界在主服务实时检查。
+- `-shell-escape` 默认关闭；minted 等额外编译需求需要显式配置项目动作。
+- 中文/日文/阿拉伯文模板依赖引擎、宏包及字体；macOS 字体不可假定存在于其他平台。
+- macOS 有本地运行与桌面回归证据；Windows/Linux 的 CI 打包不代表实机运行验收。
+- Nightly 未签名，用于测试；代码签名、公证和各系统安装后验收仍需完善。
 
-1. **P1**：Hunspell 拼写检查、跨文件 Outline、错误多文件定位
-2. **P2**：可视化表格编辑、bib 面板、构建配置 UI、可取消编译、pgfplots 误差棒 / 3D
-3. **P3**：结构化公式编辑器、宏/片段系统、导出 HTML/PDF、协作与版本历史
-
----
+下一步优先提升真实项目回归覆盖、编辑器大文档性能、协作生命周期、工具可访问性及跨平台运行验证。模块边界和发布检查见 [架构与维护](docs/architecture.md)。
 
 ## 设计来源与独立性
 

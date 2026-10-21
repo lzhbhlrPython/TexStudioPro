@@ -89,23 +89,6 @@ export const editorTheme = EditorView.theme({
     boxShadow: 'var(--shadow-lg)',
     overflow: 'hidden',
   },
-  '.cm-tooltip-autocomplete ul li[aria-selected]': {
-    backgroundColor: 'var(--accent)',
-    color: 'var(--accent-contrast)',
-  },
-  '.cm-tooltip-autocomplete ul li': {
-    fontFamily: 'var(--font-ui)',
-    fontSize: '12.5px',
-    padding: '5px 10px',
-  },
-  '.cm-completionDetail': {
-    color: 'var(--text-muted)',
-    fontStyle: 'normal',
-    marginLeft: '10px',
-  },
-  '.cm-completionIcon': {
-    opacity: '0.7',
-  },
   '.cm-panels': {
     backgroundColor: 'var(--panel)',
     color: 'var(--text)',

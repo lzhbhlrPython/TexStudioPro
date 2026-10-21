@@ -1,0 +1,13 @@
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+const { spawn } = require('node:child_process');
+const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'texpro-ui-regression-'));
+const env = { ...process.env, TEXPRO_SMOKE: '1', TEXPRO_REGRESSION: '1', TEXPRO_USER_DATA: userData, TEXPRO_ARTIFACTS: path.resolve(__dirname, '../artifacts') };
+delete env.ELECTRON_RUN_AS_NODE;
+const child = spawn(require('electron'), ['.'], { cwd: path.resolve(__dirname, '..'), env, stdio: 'inherit' });
+const timer = setTimeout(() => { console.error('UI regression timed out'); child.kill('SIGTERM'); }, 120000);
+const cleanup = () => { clearTimeout(timer); fs.rmSync(userData, { recursive: true, force: true }); };
+child.on('error', (error) => { cleanup(); console.error(error); process.exitCode = 1; });
+child.on('exit', (code) => { cleanup(); process.exitCode = code === 0 ? 0 : 1; });

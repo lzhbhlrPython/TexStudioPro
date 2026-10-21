@@ -1,28 +1,15 @@
+import { configs, generateSchematic, nextId, nodeLabel, restoreSchematic, type SchematicNode, type SchematicEdge } from '../lib/schematic';
+import type { SchematicMode } from '../lib/schematic';
+export type { SchematicMode } from '../lib/schematic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, AlignJustify, ArrowDownToLine, Atom, Battery, CircuitBoard, Cpu, FlaskConical,
   Gauge, GitBranch, Hexagon, Lightbulb, Loader2, LogIn, LogOut, Minus, Plus, Redo2,
-  RotateCcw, ToggleLeft, Trash2, Undo2, Waves, X, Zap,
+  Copy, Check, Search, RotateCcw, ToggleLeft, Trash2, Undo2, Waves, X, Zap,
 } from 'lucide-react';
 import { useI18n } from '../i18n';
-
-export type SchematicMode = 'circuit' | 'logic' | 'structure';
-
-interface SchematicNode {
-  id: string;
-  kind: string;
-  x: number;
-  y: number;
-  label: string;
-  value: string;
-}
-
-interface SchematicEdge {
-  id: string;
-  from: string;
-  to: string;
-  order: 1 | 2 | 3;
-}
+import { useDiagramPreview } from '../hooks/useDiagramPreview';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 interface Props {
   open: boolean;
@@ -31,83 +18,6 @@ interface Props {
   filePath: string | null;
   onClose: () => void;
   onInsert: (code: string, packageName: string) => void;
-}
-
-interface Template {
-  name: string;
-  nodes: Array<[string, number, number, string]>;
-  edges: Array<[number, number, 1 | 2 | 3]>;
-}
-
-const configs = {
-  circuit: {
-    package: 'circuitikz',
-    palette: [
-      ['battery', 'Battery'], ['resistor', 'Resistor'], ['capacitor', 'Capacitor'],
-      ['inductor', 'Inductor'], ['diode', 'Diode'], ['led', 'LED'],
-      ['switch', 'Switch'], ['lamp', 'Lamp'], ['vsource', 'Voltage source'],
-      ['isource', 'Current source'], ['ammeter', 'Ammeter'], ['voltmeter', 'Voltmeter'],
-      ['potentiometer', 'Potentiometer'], ['ground', 'Ground'],
-    ],
-    templates: [
-      { name: 'Series loop', nodes: [['battery', 80, 170, 'V'], ['resistor', 310, 170, 'R1'], ['resistor', 500, 170, 'R2']], edges: [[0, 1, 1], [1, 2, 1], [2, 0, 1]] },
-      { name: 'RC circuit', nodes: [['vsource', 80, 170, 'V'], ['resistor', 320, 170, 'R'], ['capacitor', 500, 170, 'C']], edges: [[0, 1, 1], [1, 2, 1], [2, 0, 1]] },
-      { name: 'Parallel pair', nodes: [['battery', 80, 180, 'V'], ['resistor', 330, 100, 'R1'], ['resistor', 330, 260, 'R2']], edges: [[0, 1, 1], [0, 2, 1], [1, 0, 1], [2, 0, 1]] },
-    ] as Template[],
-  },
-  logic: {
-    package: 'circuitikz',
-    palette: [
-      ['input', 'Input'], ['and', 'AND'], ['or', 'OR'], ['not', 'NOT'],
-      ['xor', 'XOR'], ['nand', 'NAND'], ['nor', 'NOR'], ['xnor', 'XNOR'],
-      ['output', 'Output'],
-    ],
-    templates: [
-      { name: 'AND gate', nodes: [['input', 70, 110, 'A'], ['input', 70, 250, 'B'], ['and', 350, 180, 'AND'], ['output', 560, 180, 'Y']], edges: [[0, 2, 1], [1, 2, 1], [2, 3, 1]] },
-      { name: 'Half adder', nodes: [['input', 50, 80, 'A'], ['input', 50, 170, 'B'], ['xor', 300, 80, 'XOR'], ['and', 300, 220, 'AND'], ['output', 520, 80, 'S'], ['output', 520, 220, 'C']], edges: [[0, 2, 1], [1, 2, 1], [0, 3, 1], [1, 3, 1], [2, 4, 1], [3, 5, 1]] },
-    ] as Template[],
-  },
-  structure: {
-    package: 'chemfig',
-    palette: [
-      ['CH3', 'CH₃'], ['CH2', 'CH₂'], ['CH', 'CH'], ['C', 'C'], ['O', 'O'], ['OH', 'OH'],
-      ['N', 'N'], ['NH2', 'NH₂'], ['H', 'H'], ['Cl', 'Cl'], ['Br', 'Br'], ['benzene', 'Benzene'],
-    ],
-    templates: [
-      { name: 'Ethanol', nodes: [['CH3', 100, 180, 'CH3'], ['CH2', 340, 180, 'CH2'], ['OH', 500, 180, 'OH']], edges: [[0, 1, 1], [1, 2, 1]] },
-      { name: 'Acetic acid', nodes: [['CH3', 80, 180, 'CH3'], ['C', 300, 180, 'C'], ['O', 480, 110, 'O'], ['OH', 480, 250, 'OH']], edges: [[0, 1, 1], [1, 2, 2], [1, 3, 1]] },
-    ] as Template[],
-  },
-} as const;
-
-const CIRCUIT_STYLE: Record<string, string> = {
-  battery: 'battery1', vsource: 'vsource', isource: 'isource', resistor: 'R',
-  capacitor: 'capacitor', inductor: 'inductor', diode: 'D', led: 'led',
-  switch: 'closing switch', lamp: 'lamp', ammeter: 'ammeter', voltmeter: 'voltmeter',
-  potentiometer: 'potentiometer', ground: 'ground',
-};
-
-const LOGIC_PORTS: Record<string, string> = {
-  and: 'and port', or: 'or port', not: 'not port', xor: 'xor port',
-  nand: 'nand port', nor: 'nor port', xnor: 'xnor port', buffer: 'buffer port',
-};
-
-let nodeCounter = 10;
-const nextId = (prefix: string) => `${prefix}${++nodeCounter}`;
-
-function nodeLabel(kind: string): string {
-  if (kind === 'input') return 'A';
-  if (kind === 'output') return 'Y';
-  if (kind === 'battery' || kind === 'vsource') return 'V';
-  if (kind === 'resistor') return 'R';
-  if (kind === 'capacitor') return 'C';
-  if (kind === 'inductor') return 'L';
-  if (kind === 'ground') return 'GND';
-  return kind;
-}
-
-function cleanLabel(label: string): string {
-  return label.replace(/_/g, '\\_').replace(/%/g, '\\%');
 }
 
 function NodeIcon({ kind }: { kind: string }) {
@@ -138,12 +48,15 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
   const [pending, setPending] = useState<string | null>(null);
   const [template, setTemplate] = useState(0);
   const [zoom, setZoom] = useState(1);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [previewError, setPreviewError] = useState('');
-  const [previewBusy, setPreviewBusy] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [storageError, setStorageError] = useState(false);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  useDialogFocus(open, dialogRef, onClose);
   const [history, setHistory] = useState<Array<{ nodes: SchematicNode[]; edges: SchematicEdge[] }>>([]);
   const [future, setFuture] = useState<Array<{ nodes: SchematicNode[]; edges: SchematicEdge[] }>>([]);
-  const dragRef = useRef<{ id: string; offsetX: number; offsetY: number; startNodes: SchematicNode[] } | null>(null);
+  const dragRef = useRef<{ id: string; pointerId: number; target: HTMLElement; offsetX: number; offsetY: number; startNodes: SchematicNode[]; startEdges: SchematicEdge[]; moved: boolean } | null>(null);
   const storageKey = projectRoot ? `texpro.schematic.${mode}.${projectRoot}` : '';
 
   const commit = (nextNodes: SchematicNode[], nextEdges: SchematicEdge[]) => {
@@ -174,10 +87,8 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
     if (storageKey) {
       try {
         const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
-        if (saved?.nodes && saved?.edges) {
-          nextNodes = saved.nodes;
-          nextEdges = saved.edges;
-        }
+        const restored = restoreSchematic(saved, mode);
+        if (restored) { nextNodes = restored.nodes; nextEdges = restored.edges; }
       } catch { /* ignore */ }
     }
     if (!nextNodes || !nextEdges) {
@@ -190,16 +101,22 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
     setSelectedNode(nextNodes[0]?.id ?? null);
     setSelectedEdge(null);
     setPending(null);
-    setPreview(null);
-    setPreviewError('');
+    dragRef.current = null;
+    setTemplate(0);
+    setZoom(1);
+    setPaletteQuery('');
+    setStorageError(false);
     setHistory([]);
     setFuture([]);
-  }, [open, mode]);
+  }, [open, mode, storageKey]);
 
   useEffect(() => {
     if (!open || !storageKey) return;
     const timer = window.setTimeout(() => {
-      localStorage.setItem(storageKey, JSON.stringify({ nodes, edges }));
+      try {
+        localStorage.setItem(storageKey, JSON.stringify({ nodes, edges }));
+        setStorageError(false);
+      } catch { setStorageError(true); }
     }, 350);
     return () => window.clearTimeout(timer);
   }, [open, storageKey, nodes, edges]);
@@ -239,117 +156,16 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
     setEdges(next.edges);
   };
 
-  const code = useMemo(() => {
-    if (mode === 'circuit') {
-      const lines = ['\\begin{circuitikz}[american]'];
-      for (const node of nodes) {
-        const x = (node.x / 40).toFixed(2);
-        const y = ((300 - node.y) / 40).toFixed(2);
-        const style = CIRCUIT_STYLE[node.kind] || 'R';
-        if (node.kind === 'ground') {
-          lines.push(`  \\draw (${x},${y}) node[ground] {};`);
-        } else {
-          const value = node.value ? `=${node.value}` : '';
-          lines.push(`  \\draw (${x},${y}) to[${style}, l=$${cleanLabel(node.label)}${value}$] (${(Number(x) + 2).toFixed(2)},${y});`);
-        }
-      }
-      for (const edge of edges) {
-        const from = nodes.find((node) => node.id === edge.from);
-        const to = nodes.find((node) => node.id === edge.to);
-        if (from && to) {
-          const x1 = (from.x / 40 + 2).toFixed(2);
-          const y1 = ((300 - from.y) / 40).toFixed(2);
-          const x2 = (to.x / 40).toFixed(2);
-          const y2 = ((300 - to.y) / 40).toFixed(2);
-          if (to.x <= from.x) {
-              lines.push(`  \\draw (${x1},${y1}) -- (${x1},${((300 - (Math.max(from.y, to.y) + 86)) / 40).toFixed(2)}) -- (${x2},${((300 - (Math.max(from.y, to.y) + 86)) / 40).toFixed(2)}) -- (${x2},${y2});`);
-          } else {
-            lines.push(`  \\draw (${x1},${y1}) -- (${x2},${y2});`);
-          }
-        }
-      }
-      lines.push('\\end{circuitikz}');
-      return lines.join('\n');
-    }
-    if (mode === 'logic') {
-      const lines = ['\\begin{circuitikz}'];
-      for (const node of nodes) {
-        const name = node.id;
-        const x = (node.x / 40).toFixed(2);
-        const y = ((300 - node.y) / 40).toFixed(2);
-        if (node.kind === 'input' || node.kind === 'output') {
-          lines.push(`  \\node (${name}) at (${x},${y}) {$${cleanLabel(node.label)}$};`);
-        } else {
-          const port = LOGIC_PORTS[node.kind] || 'and port';
-          lines.push(`  \\node[${port}] (${name}) at (${x},${y}) {};`);
-        }
-      }
-      const usedInputs = new Map<string, number>();
-      for (const edge of edges) {
-        const to = nodes.find((node) => node.id === edge.to);
-        if (!to) continue;
-        if (to.kind === 'input' || to.kind === 'output') {
-          lines.push(`  \\draw (${edge.from}) -- (${edge.to});`);
-        } else if (to.kind === 'not' || to.kind === 'buffer') {
-          lines.push(`  \\draw (${edge.from}) -- (${edge.to}.in);`);
-        } else {
-          const index = (usedInputs.get(edge.to) || 0) + 1;
-          usedInputs.set(edge.to, index);
-          lines.push(`  \\draw (${edge.from}) -- (${edge.to}.in ${Math.min(2, index)});`);
-        }
-      }
-      lines.push('\\end{circuitikz}');
-      return lines.join('\n');
-    }
+  const code = useMemo(() => generateSchematic(mode, nodes, edges), [mode, nodes, edges]);
 
-    const label = (node: SchematicNode) => node.kind === 'benzene' ? '*6(======)' : cleanLabel(node.label.replace(/_/g, '\\_')).replace(/([A-Za-z])(\d+)/g, '$1_$2');
-    const adjacency = new Map<string, Array<{ to: string; order: number }>>();
-    for (const node of nodes) adjacency.set(node.id, []);
-    for (const edge of edges) {
-      adjacency.get(edge.from)?.push({ to: edge.to, order: edge.order });
-      adjacency.get(edge.to)?.push({ to: edge.from, order: edge.order });
-    }
-    const visited = new Set<string>();
-    const walk = (id: string, parent: string | null): string => {
-      visited.add(id);
-      const node = nodes.find((item) => item.id === id);
-      if (!node) return '';
-      const children = (adjacency.get(id) || []).filter((item) => item.to !== parent && !visited.has(item.to));
-      if (!children.length) return label(node);
-      const first = children[0];
-      const bond = first.order === 2 ? '=' : first.order === 3 ? '~' : '-';
-      let result = label(node) + bond + walk(first.to, id);
-      for (const child of children.slice(1)) {
-        const branchBond = child.order === 2 ? '=' : child.order === 3 ? '~' : '-';
-        result += `(-[::60]${branchBond}${walk(child.to, id)})`;
-      }
-      return result;
-    };
-    const components: string[] = [];
-    for (const node of [...nodes].sort((a, b) => a.x - b.x)) {
-      if (visited.has(node.id)) continue;
-      const component = walk(node.id, null);
-      if (component) components.push(component);
-    }
-    return `\\chemfig{${components.join(' + ')}}`;
-  }, [nodes, edges, mode]);
+  const { preview, error: previewError, busy: previewBusy, retry } = useDiagramPreview(open, projectRoot, filePath, code);
 
   useEffect(() => {
-    if (!open || !projectRoot || !filePath || !code.trim()) return;
-    let cancelled = false;
-    setPreviewBusy(true);
-    const timer = window.setTimeout(async () => {
-      try {
-        const result = await window.texpro.renderTikz({ projectRoot, filePath, source: code });
-        if (cancelled) return;
-        setPreview(result.ok ? result.svgPath || null : null);
-        setPreviewError(result.ok ? '' : result.error || 'Preview failed');
-      } finally {
-        if (!cancelled) setPreviewBusy(false);
-      }
-    }, 650);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [open, projectRoot, filePath, code]);
+    if (!open) return;
+    const finish = () => endDrag();
+    window.addEventListener('blur', finish);
+    return () => { window.removeEventListener('blur', finish); dragRef.current = null; };
+  }, [open]);
 
   if (!open) return null;
 
@@ -366,40 +182,51 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
   const onDrop = (event: React.DragEvent) => {
     event.preventDefault();
     const kind = event.dataTransfer.getData('text/plain');
-    if (!kind) return;
+    if (!config.palette.some(([value]) => value === kind)) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    addNode(kind, (event.clientX - rect.left - 45) / zoom, (event.clientY - rect.top - 20) / zoom);
+    addNode(kind, Math.max(10, (event.clientX - rect.left + event.currentTarget.scrollLeft) / zoom - 45), Math.max(10, (event.clientY - rect.top + event.currentTarget.scrollTop) / zoom - 20));
   };
 
-  const startDrag = (event: React.PointerEvent, node: SchematicNode) => {
-    if (event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const rect = event.currentTarget.getBoundingClientRect();
+  const startDrag = (event: React.PointerEvent<HTMLElement>, node: SchematicNode) => {
+    if (event.button !== 0 || dragRef.current || !canvasRef.current) return;
+    event.preventDefault();
+    const target = event.currentTarget;
+    target.focus({ preventScroll: true });
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
     dragRef.current = {
-      id: node.id,
-      offsetX: (event.clientX - rect.left) / zoom,
-      offsetY: (event.clientY - rect.top) / zoom,
-      startNodes: nodes,
+      id: node.id, pointerId: event.pointerId, target,
+      offsetX: (event.clientX - rect.left + canvas.scrollLeft) / zoom - node.x,
+      offsetY: (event.clientY - rect.top + canvas.scrollTop) / zoom - node.y,
+      startNodes: nodes, startEdges: edges, moved: false,
     };
+    target.setPointerCapture(event.pointerId);
     setSelectedNode(node.id);
     setSelectedEdge(null);
   };
   const moveDrag = (event: React.PointerEvent) => {
     const drag = dragRef.current;
-    if (!drag) return;
-    const canvas = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    setNodes((current) => current.map((node) => node.id === drag.id ? {
-      ...node,
-      x: Math.max(10, Math.round((event.clientX - canvas.left - drag.offsetX * zoom) / 10) * 10),
-      y: Math.max(10, Math.round((event.clientY - canvas.top - drag.offsetY * zoom) / 10) * 10),
-    } : node));
+    const canvas = canvasRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(10, Math.round(((event.clientX - rect.left + canvas.scrollLeft) / zoom - drag.offsetX) / 10) * 10);
+    const y = Math.max(10, Math.round(((event.clientY - rect.top + canvas.scrollTop) / zoom - drag.offsetY) / 10) * 10);
+    const original = drag.startNodes.find((node) => node.id === drag.id);
+    drag.moved = Boolean(original && (original.x !== x || original.y !== y));
+    setNodes((current) => current.map((node) => node.id === drag.id ? { ...node, x, y } : node));
   };
-  const endDrag = () => {
-    if (dragRef.current) {
-      setHistory((current) => [...current.slice(-39), { nodes: dragRef.current!.startNodes, edges }]);
+  const endDrag = (event?: React.PointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag || (event && event.pointerId !== drag.pointerId)) return;
+    // React may evaluate this updater after the ref has been cleared. Capture the
+    // complete gesture first; no queued updater may dereference dragRef.current.
+    dragRef.current = null;
+    if (drag.moved) {
+      const snapshot = { nodes: drag.startNodes, edges: drag.startEdges };
+      setHistory((current) => [...current.slice(-39), snapshot]);
       setFuture([]);
     }
-    dragRef.current = null;
+    if (drag.target.hasPointerCapture(drag.pointerId)) drag.target.releasePointerCapture(drag.pointerId);
   };
 
   const removeSelected = () => {
@@ -416,6 +243,7 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
   const connect = (id: string) => {
     if (!pending) { setPending(id); return; }
     if (pending === id) { setPending(null); return; }
+    if (edges.some((edge) => edge.from === pending && edge.to === id)) { setPending(null); return; }
     commit(nodes, [...edges, { id: nextId('e'), from: pending, to: id, order: 1 }]);
     setPending(null);
   };
@@ -430,20 +258,20 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
 
   return (
     <div className="modal-scrim" onMouseDown={onClose}>
-      <section className="schematic-studio" data-testid={`${mode}-studio`} onMouseDown={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="schematic-title" tabIndex={-1} className="schematic-studio" data-testid={`${mode}-studio`} onMouseDown={(event) => event.stopPropagation()}>
         <header className="studio-header">
           <div className="studio-heading">
             <div className="studio-icon"><Icon size={18} /></div>
-            <div><span className="modal-eyebrow">{t('Visual diagram')}</span><h2>{title}</h2></div>
+            <div><h2 id="schematic-title">{title}</h2><p className="studio-subtitle">{t('Build a diagram, insert editable LaTeX.')}</p></div>
           </div>
           <div className="studio-header-actions">
             <span className="studio-engine ok">{config.package}</span>
-            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Close')}><X size={16} /></button>
           </div>
         </header>
 
         <div className="schematic-toolbar">
-          <select value={template} onChange={(event) => { setTemplate(Number(event.target.value)); loadTemplate(Number(event.target.value)); }}>
+          <select aria-label={t('Template')} value={template} onChange={(event) => { setTemplate(Number(event.target.value)); loadTemplate(Number(event.target.value)); }}>
             {config.templates.map((item, index) => <option key={item.name} value={index}>{t(item.name)}</option>)}
           </select>
           <span className="toolbar-sep" />
@@ -458,20 +286,25 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
           <button className="danger-btn" onClick={removeSelected} disabled={!selectedNode && !selectedEdge}><Trash2 size={12} /> {t('Delete')}</button>
         </div>
 
+        <div className={`schematic-context ${pending ? 'connecting' : ''}`} role="status">
+          {pending ? <><span>{t('Choose a second port to finish the connection.')}</span><button onClick={() => setPending(null)}>{t('Cancel connection')}</button></> : <span>{nodes.length} {t('nodes')} · {edges.length} {t('wires')} · {t('Select to inspect; drag to move.')}</span>}
+          {storageError && <span role="alert">{t('Draft could not be saved. Copy the LaTeX before closing.')}</span>}
+        </div>
         <div className="schematic-body">
           <aside className="schematic-palette">
             <div className="pane-label"><Plus size={12} /> {t('Components')}</div>
+            <label className="schematic-search"><Search size={14} /><input aria-label={t('Search components')} placeholder={t('Search components')} value={paletteQuery} onChange={(event) => setPaletteQuery(event.target.value)} /></label>
             <div className="schematic-palette-list">
-              {config.palette.map(([kind, label]) => (
+              {config.palette.filter(([kind, label]) => `${kind} ${t(label)}`.toLowerCase().includes(paletteQuery.trim().toLowerCase())).map(([kind, label]) => (
                 <button key={kind} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', kind)} onClick={() => addNode(kind)}>
                   <span className="palette-label"><NodeIcon kind={kind} /> {t(label)}</span><small>{kind}</small>
                 </button>
               ))}
             </div>
-            <p className="schematic-hint">{t('Drag onto the canvas. Click two nodes to connect them.')}</p>
+            <p className="schematic-hint">{t('Drag components to place them. Click two ports to connect.')}</p>
           </aside>
 
-          <div className="schematic-canvas" onDrop={onDrop} onDragOver={(event) => event.preventDefault()} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
+          <div ref={canvasRef} className="schematic-canvas" onDrop={onDrop} onDragOver={(event) => event.preventDefault()} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag}>
             <div className="schematic-canvas-inner" style={{ transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
               <svg className="schematic-wires">
                 {edges.map((edge) => {
@@ -503,16 +336,30 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
               {nodes.map((node) => (
                 <div
                   key={node.id}
+                  tabIndex={0}
+                  role="group"
+                  aria-label={`${t('Element')}: ${node.label}`}
+                  onFocus={() => { setSelectedNode(node.id); setSelectedEdge(null); }}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === 'Enter') { event.preventDefault(); connect(node.id); }
+                    const delta: Record<string, [number, number]> = { ArrowLeft: [-10, 0], ArrowRight: [10, 0], ArrowUp: [0, -10], ArrowDown: [0, 10] };
+                    if (delta[event.key]) {
+                      event.preventDefault();
+                      const [dx, dy] = delta[event.key];
+                      commit(nodes.map((item) => item.id === node.id ? { ...item, x: Math.max(10, item.x + dx), y: Math.max(10, item.y + dy) } : item), edges);
+                    }
+                  }}
                   className={`schematic-node ${mode === 'logic' && !['input', 'output'].includes(node.kind) ? 'gate' : ''} ${mode === 'logic' && ['not', 'buffer'].includes(node.kind) ? 'gate-single' : ''} ${selectedNode === node.id ? 'selected' : ''} ${pending === node.id ? 'pending' : ''} kind-${node.kind}`}
                   style={{ left: node.x, top: node.y }}
                   onPointerDown={(event) => startDrag(event, node)}
                   onDoubleClick={() => connect(node.id)}
                 >
-                  <span className="schematic-port left" onPointerDown={(event) => { event.stopPropagation(); connect(node.id); }} />
-                  {mode === 'logic' && !['input', 'output', 'not', 'buffer'].includes(node.kind) && <span className="schematic-port left in-two" onPointerDown={(event) => { event.stopPropagation(); connect(node.id); }} />}
+                  <button className="schematic-port left" aria-label={t('Connect input of {name}', { name: node.label })} onPointerDown={(event) => event.stopPropagation()} onClick={() => connect(node.id)} />
+                  {mode === 'logic' && !['input', 'output', 'not', 'buffer'].includes(node.kind) && <button className="schematic-port left in-two" aria-label={t('Connect second input of {name}', { name: node.label })} onPointerDown={(event) => event.stopPropagation()} onClick={() => connect(node.id)} />}
                   <span className="schematic-node-icon"><NodeIcon kind={node.kind} /></span>
                   <span className="schematic-node-copy"><strong>{node.label}</strong><small>{node.kind}</small></span>
-                  <span className="schematic-port right" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); connect(node.id); }} />
+                  <button aria-label={t('Connect output of {name}', { name: node.label })} className="schematic-port right" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); connect(node.id); }} />
                 </div>
               ))}
             </div>
@@ -524,7 +371,7 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
               <div className="schematic-inspector">
                 <label className="workshop-field"><span>{t('Label')}</span><input value={selected.label} onChange={(event) => updateSelected({ label: event.target.value })} /></label>
                 <label className="workshop-field"><span>{t('Element')}</span><input value={selected.kind} readOnly /></label>
-                <label className="workshop-field"><span>{t('Value')}</span><input value={selected.value} onChange={(event) => updateSelected({ value: event.target.value })} placeholder="10 kΩ" /></label>
+                {mode === 'circuit' && <label className="workshop-field"><span>{t('Value')}</span><input value={selected.value} onChange={(event) => updateSelected({ value: event.target.value })} placeholder="10 kΩ" /></label>}
                 <p className="schematic-hint">{t('Drag the node on canvas. Connect by clicking ports.')}</p>
                 <button className="secondary-btn" onClick={() => {
                   const id = nextId('n');
@@ -547,11 +394,17 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
             <div className="pane-label">{t('Preview')}</div>
             <div className="schematic-preview-canvas">
               {previewBusy && <div className="schematic-loading"><Loader2 size={16} className="spin" /><span>{t('Typesetting preview…')}</span></div>}
-              {!previewBusy && preview && <img src={preview} alt="diagram preview" />}
-              {!previewBusy && !preview && <span>{previewError || t('Preview will appear here.')}</span>}
+              {!previewBusy && preview && <img src={preview} alt={t('Diagram preview')} />}
+              {!previewBusy && !preview && (previewError ? <div className="schematic-preview-error" role="alert"><strong>{t('Preview unavailable')}</strong><p>{previewError}</p><button className="secondary-btn" onClick={retry}>{t('Retry preview')}</button></div> : <span>{t('Preview will appear here.')}</span>)}
             </div>
-            <div className="pane-label">{t('Generated LaTeX')}</div>
-            <pre className="schematic-code">{code}</pre>
+            <details className="schematic-source" open>
+              <summary>{t('Generated LaTeX')}</summary>
+              <button className="mini-btn schematic-copy" onClick={async () => {
+                try { await navigator.clipboard.writeText(code); setCopied(true); }
+                catch { setCopied(false); }
+              }}>{copied ? <Check size={12} /> : <Copy size={12} />}{t(copied ? 'Copied' : 'Copy LaTeX')}</button>
+              <pre className="schematic-code">{code}</pre>
+            </details>
           </aside>
         </div>
 
@@ -559,7 +412,7 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
           <span className="studio-hint">{t('Visual structure, editable LaTeX output.')}</span>
           <div className="spacer" />
           <button className="secondary-btn" onClick={onClose}>{t('Cancel')}</button>
-          <button className="primary-btn" onClick={() => { onInsert(code, config.package); onClose(); }}>{t('Insert diagram')}</button>
+          <button className="primary-btn" disabled={!nodes.length} onClick={() => { onInsert(code, config.package); onClose(); }}>{t('Insert diagram')}</button>
         </footer>
       </section>
     </div>

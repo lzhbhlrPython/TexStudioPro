@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PageViewport } from 'pdfjs-dist/types/src/display/page_viewport';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import {
   ChevronLeft,
@@ -19,6 +20,7 @@ import {
   PanelLeft,
   Presentation,
   Search,
+  ScanLine,
   X,
   Plus,
   RefreshCw,
@@ -26,6 +28,7 @@ import {
 import type { BoxHotspot, SyncTarget } from '../types';
 import { useI18n } from '../i18n';
 import { buildPdfDiff } from '../lib/pdfDiff';
+import { dragRect, intersects, mergeTextRects, sampleRegion, toSyncPoint, toViewportRect, type PdfPoint, type PdfRect } from '../lib/pdfSync';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -37,7 +40,7 @@ interface Props {
   error: string | null;
   syncTarget: SyncTarget | null;
   onCompile: () => void;
-  onInverse: (page: number, x: number, y: number) => void;
+  onInverse: (page: number, x: number, y: number, points?: PdfPoint[]) => void;
   onOpenPdf: () => void;
   onReveal: () => void;
   onPageChange: (page: number) => void;
@@ -49,7 +52,8 @@ interface PageViewProps {
   pageNumber: number;
   scale: number;
   syncTarget: SyncTarget | null;
-  onInverse: (page: number, x: number, y: number) => void;
+  onInverse: Props['onInverse'];
+  selectRegion: boolean;
   previousDoc?: PDFDocumentProxy | null;
   diffMode?: boolean;
   diffOpacity?: number;
@@ -119,16 +123,43 @@ function PdfThumbnail({ doc, pageNumber, active, onClick }: {
   );
 }
 
-function PdfPageView({ doc, pageNumber, scale, syncTarget, onInverse, previousDoc, diffMode, diffOpacity = 0.5, hotspots = [] }: PageViewProps) {
+function PdfPageView({ doc, pageNumber, scale, syncTarget, onInverse, selectRegion, previousDoc, diffMode, diffOpacity = 0.5, hotspots = [] }: PageViewProps) {
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const viewportRef = useRef<{ width: number; height: number; scale: number } | null>(null);
+  const viewportRef = useRef<PageViewport | null>(null);
+  const [viewport, setViewport] = useState<PageViewport | null>(null);
   const [size, setSize] = useState({ width: 595, height: 842 });
   const [rendered, setRendered] = useState(false);
   const diffCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [visible, setVisible] = useState(false);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
+  const [textReady, setTextReady] = useState(false);
+  const [markerRects, setMarkerRects] = useState<PdfRect[]>([]);
+  const [region, setRegion] = useState<PdfRect | null>(null);
+  const gesture = useRef<{ pointerId: number; start: PdfPoint } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void doc.getPage(pageNumber).then((page) => {
+      if (cancelled) return;
+      const next = page.getViewport({ scale });
+      viewportRef.current = next;
+      setViewport(next);
+      setSize({ width: next.width, height: next.height });
+    }).catch(() => undefined);
+    setRegion(null);
+    return () => { cancelled = true; };
+  }, [doc, pageNumber, scale]);
+
+  useEffect(() => {
+    if (!selectRegion) setRegion(null);
+    const cancel = () => { gesture.current = null; setRegion(null); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') cancel(); };
+    window.addEventListener('blur', cancel);
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('blur', cancel); window.removeEventListener('keydown', onKey); cancel(); };
+  }, [selectRegion]);
 
   useEffect(() => {
     const element = wrapRef.current;
@@ -141,6 +172,7 @@ function PdfPageView({ doc, pageNumber, scale, syncTarget, onInverse, previousDo
   }, []);
 
   useEffect(() => {
+    setTextReady(false);
     if (!visible) {
       const canvas = canvasRef.current;
       if (canvas) {
@@ -153,6 +185,7 @@ function PdfPageView({ doc, pageNumber, scale, syncTarget, onInverse, previousDo
     }
     let cancelled = false;
     let renderTask: { cancel: () => void } | null = null;
+    let textTask: pdfjsLib.TextLayer | null = null;
     async function render() {
       setRendered(false);
       const page = await doc.getPage(pageNumber);
@@ -165,7 +198,7 @@ function PdfPageView({ doc, pageNumber, scale, syncTarget, onInverse, previousDo
       canvas.height = Math.floor(viewport.height * dpr);
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
-      viewportRef.current = { width: viewport.width, height: viewport.height, scale: viewport.scale };
+      viewportRef.current = viewport;
       setSize({ width: viewport.width, height: viewport.height });
       const context = canvas.getContext('2d', { alpha: false });
       if (!context) return;
@@ -187,27 +220,19 @@ function PdfPageView({ doc, pageNumber, scale, syncTarget, onInverse, previousDo
         if (cancelled || !textLayerRef.current) return;
         const layer = textLayerRef.current;
         layer.replaceChildren();
-        for (const item of content.items) {
-          if (!('str' in item) || !item.str || !item.transform) continue;
-          const [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
-          const fontSize = Math.hypot(item.transform[2], item.transform[3]) * scale;
-          if (fontSize <= 0) continue;
-          const span = document.createElement('span');
-          span.textContent = item.str;
-          span.style.left = `${x}px`;
-          span.style.top = `${y - fontSize}px`;
-          span.style.fontSize = `${fontSize}px`;
-          span.style.width = `${Math.max(1, item.width * scale)}px`;
-          layer.appendChild(span);
-        }
+        layer.style.setProperty('--total-scale-factor', String(viewport.scale * viewport.userUnit));
+        textTask = new pdfjsLib.TextLayer({ textContentSource: content, container: layer, viewport });
+        await textTask.render();
+        if (!cancelled) setTextReady(true);
       } catch {
         // rendering can be cancelled when zooming quickly
       }
     }
-    render();
+    void render().catch(() => { if (!cancelled) setRendered(false); });
     return () => {
       cancelled = true;
       renderTask?.cancel();
+      textTask?.cancel();
     };
   }, [doc, pageNumber, scale, visible]);
 
@@ -260,44 +285,100 @@ function PdfPageView({ doc, pageNumber, scale, syncTarget, onInverse, previousDo
     };
   }, [previousDoc, diffMode, visible, rendered, pageNumber, scale]);
 
+  const textRects = () => {
+    const page = wrapRef.current?.getBoundingClientRect();
+    if (!page || !textLayerRef.current) return [];
+    return [...textLayerRef.current.querySelectorAll<HTMLElement>('span:not(.markedContent)')].filter((span) => span.textContent?.trim()).map((span) => {
+      const rect = span.getBoundingClientRect();
+      return { x: rect.left - page.left, y: rect.top - page.top, width: rect.width, height: rect.height };
+    });
+  };
+  const marker = syncTarget && syncTarget.page === pageNumber ? syncTarget : null;
+  const markerBox = marker && viewport ? toViewportRect(marker.bounds || { x: marker.x, y: marker.y - 10, width: marker.width || 24, height: marker.height || 12 }, viewport) : null;
+
   useEffect(() => {
-    if (!syncTarget || syncTarget.page !== pageNumber || !wrapRef.current) return;
+    if (!marker || !viewport) { setMarkerRects([]); return; }
+    const box = toViewportRect(marker.bounds || { x: marker.x, y: marker.y - 10, width: marker.width || 24, height: marker.height || 12 }, viewport);
+    const matches = textReady ? mergeTextRects(textRects().filter((rect) => intersects(box, rect))) : [];
+    setMarkerRects(matches.length ? matches : [box]);
+    setRegion(null);
+  }, [syncTarget, viewport, textReady, pageNumber]);
+
+  useEffect(() => {
+    if (!markerBox || !wrapRef.current) return;
     const page = wrapRef.current;
     const scroller = page.closest('.pdf-scroll') as HTMLElement | null;
-    if (!scroller) {
-      page.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      return;
-    }
+    if (!scroller) return;
     const pageRect = page.getBoundingClientRect();
     const scrollerRect = scroller.getBoundingClientRect();
-    const markerY = pageRect.top - scrollerRect.top + syncTarget.y * scale;
-    if (markerY < 90 || markerY > scroller.clientHeight - 110) {
-      page.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }
-  }, [syncTarget, pageNumber, scale]);
+    const top = pageRect.top - scrollerRect.top + markerBox.y;
+    const left = pageRect.left - scrollerRect.left + markerBox.x;
+    const scrollY = top < 60 || top + markerBox.height > scroller.clientHeight - 40;
+    const scrollX = left < 12 || left + markerBox.width > scroller.clientWidth - 12;
+    if (scrollY || scrollX) scroller.scrollTo({
+      top: scrollY ? scroller.scrollTop + top - scroller.clientHeight * 0.4 : scroller.scrollTop,
+      left: scrollX ? scroller.scrollLeft + left - Math.max(12, (scroller.clientWidth - markerBox.width) / 2) : scroller.scrollLeft,
+      behavior: marker?.manual && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto',
+    });
+  }, [syncTarget, viewport, size.height, pageNumber]);
 
-  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!(event.metaKey || event.ctrlKey)) return;
-    const viewport = viewportRef.current;
+  const localPoint = (event: React.PointerEvent<HTMLDivElement>): PdfPoint => {
     const rect = event.currentTarget.getBoundingClientRect();
+    return { x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)), y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)) };
+  };
+  const startRegion = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || gesture.current || !(selectRegion || event.metaKey || event.ctrlKey)) return;
+    event.preventDefault();
+    gesture.current = { pointerId: event.pointerId, start: localPoint(event) };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setRegion(null);
+  };
+  const moveRegion = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!gesture.current || gesture.current.pointerId !== event.pointerId) return;
+    setRegion(dragRect(gesture.current.start, localPoint(event)));
+  };
+  const endRegion = (event: React.PointerEvent<HTMLDivElement>, cancel = false) => {
+    const active = gesture.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    gesture.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (cancel) { setRegion(null); return; }
+    const viewport = viewportRef.current;
     if (!viewport) return;
-    const x = (event.clientX - rect.left) / viewport.scale;
-    const y = (event.clientY - rect.top) / viewport.scale;
-    onInverse(pageNumber, x, y);
+    const end = localPoint(event);
+    const rect = dragRect(active.start, end);
+    if (rect.width < 4 && rect.height < 4) {
+      const point = toSyncPoint(end, viewport);
+      const line = textRects().find((text) => intersects({ x: end.x - 2, y: end.y - 2, width: 4, height: 4 }, text));
+      setRegion(line || { x: end.x - 8, y: end.y - 6, width: 16, height: 12 });
+      onInverse(pageNumber, point.x, point.y);
+    } else {
+      const selected = textRects().filter((text) => intersects(rect, text)).map((text) => {
+        const x = Math.max(text.x, rect.x), y = Math.max(text.y, rect.y);
+        return { x, y, width: Math.min(text.x + text.width, rect.x + rect.width) - x, height: Math.min(text.y + text.height, rect.y + rect.height) - y };
+      });
+      const points = sampleRegion(selected, rect).map((point) => toSyncPoint(point, viewport));
+      setRegion(rect);
+      onInverse(pageNumber, points[0].x, points[0].y, points);
+    }
   };
 
-  const marker = syncTarget && syncTarget.page === pageNumber ? syncTarget : null;
   const pageHotspots = hotspots.filter((hotspot) => hotspot.page === pageNumber);
 
   return (
     <div className="pdf-page-shell" data-page={pageNumber}>
       <div className="pdf-page-label">{t('Page {page}', { page: pageNumber })}</div>
       <div
-        className="pdf-page"
+        className={`pdf-page ${selectRegion ? 'pdf-region-mode' : ''}`}
         ref={wrapRef}
         style={{ width: size.width, height: size.height }}
-        onClick={handleClick}
-        title={t('Hold ⌘ and click anywhere in the page to jump to source')}
+        onPointerDown={startRegion}
+        onPointerMove={moveRegion}
+        onPointerUp={(event) => endRegion(event)}
+        onPointerCancel={(event) => endRegion(event, true)}
+        onLostPointerCapture={(event) => endRegion(event, true)}
+        data-text-ready={textReady}
+        title={t(selectRegion ? 'Drag to select a PDF region and locate its source. Esc cancels.' : 'Hold ⌘ / Ctrl and click or drag to locate source')}
       >
         {!rendered && (
           <div className="pdf-page-loading">
@@ -315,20 +396,19 @@ function PdfPageView({ doc, pageNumber, scale, syncTarget, onInverse, previousDo
             title={hotspot.message}
           />
         ))}
-        {marker && (
+        {region && <div className="pdf-region-selection" style={{ left: region.x, top: region.y, width: region.width, height: region.height }} />}
+        {!region && marker && markerRects.map((rect, index) => (
           <div
-            key={marker.key}
+            key={`${marker.key}-${index}`}
             className="pdf-sync-marker"
             style={{
-              left: marker.x * scale,
-              top: Math.max(0, marker.y * scale - 8),
-              width: Math.max(24, (marker.width || 120) * scale),
-              height: Math.max(12, (marker.height || 12) * scale),
+              left: rect.x,
+              top: Math.max(0, rect.y),
+              width: Math.max(4, rect.width),
+              height: Math.max(4, rect.height),
             }}
-          >
-            <span />
-          </div>
-        )}
+          />
+        ))}
       </div>
     </div>
   );
@@ -371,7 +451,16 @@ export function PdfPane({
   const [diffMode, setDiffMode] = useState(false);
   const [diffOpacity, setDiffOpacity] = useState(0.5);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const [selectRegion, setSelectRegion] = useState(false);
   const pdfPaneRef = useRef<HTMLElement | null>(null);
+  const loadedPath = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!selectRegion) return;
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setSelectRegion(false); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [selectRegion]);
 
   useEffect(() => {
     if (!viewMenuOpen) return;
@@ -403,6 +492,8 @@ export function PdfPane({
     }
     setLoading(true);
     setLoadError(null);
+    const sameDocument = loadedPath.current === pdfPath;
+    const position = sameDocument ? { top: scrollRef.current?.scrollTop || 0, left: scrollRef.current?.scrollLeft || 0 } : { top: 0, left: 0 };
     const task = pdfjsLib.getDocument({
       data: bytes.slice(),
       useSystemFonts: true,
@@ -420,7 +511,9 @@ export function PdfPane({
         setDoc(document);
         setPageCount(document.numPages);
         setLoading(false);
-        setCurrentPage(1);
+        loadedPath.current = pdfPath;
+        setCurrentPage((page) => sameDocument ? Math.min(page, document.numPages) : 1);
+        requestAnimationFrame(() => { if (!cancelled) scrollRef.current?.scrollTo({ ...position, behavior: 'auto' }); });
       })
       .catch((loadFailure) => {
         if (cancelled) return;
@@ -431,7 +524,7 @@ export function PdfPane({
       cancelled = true;
       void task.destroy();
     };
-  }, [bytes]);
+  }, [bytes, pdfPath]);
 
   useEffect(() => {
     if (!previousBytes || previousBytes.length === 0) {
@@ -506,11 +599,13 @@ export function PdfPane({
           const content = await page.getTextContent();
           const text = content.items.map((item) => ('str' in item ? item.str : '')).join(' ').toLowerCase();
           if (text.includes(needle)) hits.push(index);
-            }
+        }
         if (!cancelled) {
           setSearchHits(hits);
           setSearchIndex(0);
         }
+      } catch {
+        if (!cancelled) setSearchHits([]);
       } finally {
         if (!cancelled) setSearching(false);
       }
@@ -665,6 +760,14 @@ export function PdfPane({
             <Search size={14} />
           </button>
           <span className="toolbar-sep" />
+          <button
+            className={`icon-btn ${selectRegion ? 'active' : ''}`}
+            data-testid="pdf-region-toggle"
+            onClick={() => setSelectRegion((value) => !value)}
+            title={t('Select PDF region')}
+            aria-label={t('Select PDF region')}
+            aria-pressed={selectRegion}
+          ><ScanLine size={14} /></button>
           <div className="pdf-view-menu">
             <button
               className={`icon-btn ${viewMenuOpen ? 'active' : ''}`}
@@ -758,6 +861,7 @@ export function PdfPane({
                 scale={zoom}
                 syncTarget={syncTarget}
                 onInverse={onInverse}
+                selectRegion={selectRegion}
                 previousDoc={previousDoc}
                 diffMode={diffMode}
                 diffOpacity={diffOpacity}
@@ -772,7 +876,7 @@ export function PdfPane({
           </div>
         )}
         <div className="pdf-footnote">
-          <Crosshair size={11} /> {t('Hold ⌘ and click anywhere in the page to jump to source')}
+          <Crosshair size={11} /> {t(selectRegion ? 'Drag to select a PDF region and locate its source. Esc cancels.' : 'Hold ⌘ / Ctrl and click or drag to locate source')}
         </div>
       </div>
       </div>
