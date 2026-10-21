@@ -17,7 +17,7 @@ const tex = require('../electron/services/tex.cjs');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VERSION = '0.1.0';
 const IGNORED = new Set(['.git', '.texpro', 'node_modules', 'dist', 'build', 'out', '.DS_Store']);
-const projectState = { root: null, tree: null, rootFile: null, lastCompile: null, lastCompilePdf: null };
+const projectState = { root: null, tree: null, rootFile: null, rootCandidates: [], rootSource: null, rootError: null, lastCompile: null, lastCompilePdf: null };
 
 function log(...args) {
   process.stderr.write('[texpro-mcp] ' + args.join(' ') + '\n');
@@ -28,6 +28,12 @@ function setProject(root) {
   const stat = fs.statSync(resolved);
   if (!stat.isDirectory()) throw new Error('Project root is not a directory: ' + resolved);
   const opened = tex.openProject(resolved);
+  if (projectState.root !== resolved || projectState.rootFile !== opened.rootFile) {
+    projectState.lastCompile = null; projectState.lastCompilePdf = null;
+  }
+  projectState.rootCandidates = opened.rootCandidates;
+  projectState.rootSource = opened.rootSource;
+  projectState.rootError = opened.rootError;
   projectState.root = resolved;
   projectState.tree = opened.tree;
   projectState.rootFile = opened.rootFile;
@@ -151,13 +157,14 @@ let activeCompile = null;
 async function callTool(name, args = {}) {
   if (name === 'texpro_open_project') {
     const opened = setProject(args.root);
-    return { content: [{ type: 'text', text: JSON.stringify({ root: opened.root, name: opened.name, rootFile: opened.rootFile, tree: opened.tree }, null, 2) }] };
+    return { content: [{ type: 'text', text: JSON.stringify({ root: opened.root, name: opened.name, rootFile: opened.rootFile, rootCandidates: opened.rootCandidates, rootSource: opened.rootSource, rootError: opened.rootError, tree: opened.tree }, null, 2) }] };
   }
   if (!projectState.root) throw new Error('No project is open. Call texpro_open_project first.');
 
+  setProject(projectState.root);
   switch (name) {
     case 'texpro_project_info':
-      return { content: [{ type: 'text', text: JSON.stringify({ root: projectState.root, name: path.basename(projectState.root), rootFile: projectState.rootFile, buildDir: configBuildDir() }, null, 2) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ root: projectState.root, name: path.basename(projectState.root), rootFile: projectState.rootFile, rootCandidates: projectState.rootCandidates, rootSource: projectState.rootSource, rootError: projectState.rootError, buildDir: configBuildDir() }, null, 2) }] };
     case 'texpro_list_files': {
       const dir = inside(args.path || '.');
       const tree = walk(dir, 0, Math.min(8, Number(args.depth) || 4));
@@ -195,7 +202,7 @@ async function callTool(name, args = {}) {
       const result = await tex.runCompile({
         projectRoot: projectState.root,
         activeFile: active,
-        fallbackRoot: projectState.rootFile || active,
+        fallbackRoot: projectState.rootFile,
         engine: engine || null,
         buildDir: args.buildDir || configBuildDir(),
         runId,

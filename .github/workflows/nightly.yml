@@ -14,8 +14,26 @@ permissions:
   contents: write
 
 jobs:
+  changes:
+    name: Check today's changes (Asia/Shanghai)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      build: ${{ steps.changes.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: changes
+        run: node scripts/nightly-changes.cjs
+
   test:
     name: Typecheck and build
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -25,6 +43,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run test:regression
       - run: npm run typecheck
       - run: npm run build
 
@@ -44,6 +63,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/set-nightly-version.mjs
+      - run: npm run build
+      - run: npm run verify:release
       - name: Build DMG and ZIP
         run: npx electron-builder --mac --universal --publish never
       - uses: actions/upload-artifact@v4
@@ -69,6 +90,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node scripts/set-nightly-version.mjs
+      - run: npm run build
+      - run: npm run verify:release
       - name: Build installer, portable and zip
         run: npx electron-builder --win nsis portable zip --x64 --publish never
       - uses: actions/upload-artifact@v4
@@ -99,6 +122,8 @@ jobs:
             fakeroot rpm libarchive-tools
       - run: npm ci
       - run: node scripts/set-nightly-version.mjs
+      - run: npm run build
+      - run: npm run verify:release
       - name: Build AppImage, deb and rpm
         run: npx electron-builder --linux AppImage deb rpm --x64 --publish never
       - uses: actions/upload-artifact@v4

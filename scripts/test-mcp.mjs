@@ -4,7 +4,7 @@ import process from 'node:process';
 import readline from 'node:readline';
 
 const root = process.cwd();
-const child = spawn(process.execPath, [path.join(root, 'mcp/server.mjs'), '--project', path.join(root, 'demo')], {
+const child = spawn(process.execPath, [process.env.TEXPRO_MCP_SERVER || path.join(root, 'mcp/server.mjs'), '--project', path.join(root, 'demo')], {
   stdio: ['pipe', 'pipe', 'pipe'],
 });
 const failures = [];

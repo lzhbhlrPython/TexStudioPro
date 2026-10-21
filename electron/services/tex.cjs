@@ -9,19 +9,10 @@ const { promisify } = require('node:util');
 
 const execFileAsync = promisify(execFile);
 
-const IGNORED_DIRS = new Set([
-  '.git', '.svn', '.hg', 'node_modules', '.texpro', 'dist', 'release',
-  '__pycache__', '.DS_Store', '.idea', '.vscode', 'build', 'out',
-]);
-
-const TEXT_EXTENSIONS = new Set([
-  '.tex', '.ltx', '.bib', '.cls', '.sty', '.bst', '.txt', '.md', '.json',
-  '.yaml', '.yml', '.toml', '.csv', '.cfg', '.def', '.clo', '.fd', '.lua',
-]);
-
-function isTextFile(file) {
-  return TEXT_EXTENSIONS.has(path.extname(file).toLowerCase());
-}
+const { IGNORED_DIRS, isTextFile } = require('./project-files.cjs');
+const history = require('./history.cjs');
+const git = require('./git.cjs');
+const { readConfig, resolveProjectRoot, resolveCompileRoot, rebaseConfiguredRoot } = require('./project-root.cjs');
 
 function walk(root, current = root, depth = 0, budget = { left: 1200 }) {
   if (depth > 8 || budget.left <= 0) return [];
@@ -75,52 +66,19 @@ function safeSize(file) {
   }
 }
 
-function findRootFile(root) {
-  const candidates = [];
-  const visit = (dir, depth) => {
-    if (depth > 5) return;
-    let entries = [];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (entry.name.startsWith('.') || IGNORED_DIRS.has(entry.name)) continue;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) visit(full, depth + 1);
-      if (entry.isFile() && /\.(tex|ltx)$/i.test(entry.name)) {
-        let head = '';
-        try {
-          head = fs.readFileSync(full, 'utf8').slice(0, 12000);
-        } catch {
-          continue;
-        }
-        if (/\\documentclass\b/.test(head)) {
-          const rel = path.relative(root, full);
-          let score = rel.split(path.sep).length;
-          if (/^(main|paper|thesis|book|report|article)\.(tex|ltx)$/i.test(entry.name)) score -= 2;
-          candidates.push({ file: full, score });
-        }
-      }
-    }
-  };
-  visit(root, 0);
-  candidates.sort((a, b) => a.score - b.score || a.file.localeCompare(b.file));
-  return candidates[0]?.file || null;
-}
+function findRootFile(root) { return resolveProjectRoot(root).rootFile; }
 
 function openProject(root) {
   const resolved = path.resolve(root);
   const stat = fs.statSync(resolved);
   if (!stat.isDirectory()) throw new Error('Not a directory: ' + resolved);
   const tree = walk(resolved);
-  const rootFile = findRootFile(resolved);
+  const rootInfo = resolveProjectRoot(resolved);
   return {
     root: resolved,
     name: path.basename(resolved),
     tree,
-    rootFile,
+    ...rootInfo,
   };
 }
 
@@ -764,7 +722,9 @@ async function diagnoseProject(projectRoot) {
   }
 
   const texFiles = textFiles.filter((file) => /\.(tex|ltx)$/i.test(file));
-  const rootFile = findRootFile(root);
+  const rootInfo = resolveProjectRoot(root);
+  const rootFile = rootInfo.rootFile;
+  if (!rootFile) issues.push({ severity: 'error', kind: 'main-file', message: rootInfo.rootError, file: '', line: 0 });
   if (rootFile) {
     const reachable = new Set([path.resolve(rootFile)]);
     let added = true;
@@ -905,6 +865,7 @@ function moveProjectDirectory(projectRoot, dir, nextName) {
   const newDir = path.join(path.dirname(oldDir), safeName);
   if (fs.existsSync(newDir)) throw new Error('A directory with that name already exists');
   fs.renameSync(oldDir, newDir);
+  rebaseConfiguredRoot(root, oldDir, newDir);
 
   const oldRel = path.relative(root, oldDir).replace(/\\/g, '/');
   const newRel = path.relative(root, newDir).replace(/\\/g, '/');
@@ -952,6 +913,7 @@ function renameProjectFile(projectRoot, file, nextName) {
   const newPath = path.join(path.dirname(oldPath), name);
   if (fs.existsSync(newPath)) throw new Error('A file with that name already exists');
   fs.renameSync(oldPath, newPath);
+  rebaseConfiguredRoot(root, oldPath, newPath);
 
   const oldRelative = path.relative(root, oldPath).replace(/\\/g, '/');
   const newRelative = path.relative(root, newPath).replace(/\\/g, '/');
@@ -1036,7 +998,7 @@ async function renderTemplatePreview({ source, engine, cacheDir }) {
 async function createArxivPackage(projectRoot) {
   const root = path.resolve(projectRoot);
   const rootFile = findRootFile(root);
-  if (!rootFile) throw new Error('No root .tex file found');
+  if (!rootFile) throw new Error(resolveProjectRoot(root).rootError);
   const exportsDir = path.join(root, '.texpro', 'exports');
   fs.mkdirSync(exportsDir, { recursive: true });
   const work = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'texpro-arxiv-'));
@@ -1060,13 +1022,9 @@ async function createArxivPackage(projectRoot) {
     }
   };
   visit(root, work);
-  const rootName = path.basename(rootFile);
-  if (rootName !== 'main.tex') {
-    fs.copyFileSync(rootFile, path.join(work, 'main.tex'));
-    files += 1;
-  }
-  const engine = detectEngine(rootFile);
-  fs.writeFileSync(path.join(work, 'README.txt'), `TeXPro arXiv package\nRoot: ${rootName}\nEngine: ${engine}\nCreated: ${new Date().toISOString()}\n`, 'utf8');
+  const rootName = path.relative(root, rootFile).replaceAll('\\', '/');
+  const engine = detectEngine(fs.readFileSync(rootFile, 'utf8'));
+  fs.writeFileSync(path.join(work, 'README.txt'), `TeXPro arXiv package\nRoot: ${rootName}\nCompile from the project folder: latexmk -${engine === 'xelatex' ? 'xelatex' : engine === 'lualatex' ? 'lualatex' : 'pdf'} "${rootName}"\nEngine: ${engine}\nCreated: ${new Date().toISOString()}\n`, 'utf8');
   const zipName = `arxiv-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
   const zipPath = path.join(exportsDir, zipName);
   try {
@@ -1188,7 +1146,7 @@ async function fontCoverage(projectRoot) {
   }
 
   const rootFile = findRootFile(root);
-  const pdfPath = rootFile ? path.join(root, '.texpro', 'build', path.basename(rootFile, path.extname(rootFile)) + '.pdf') : null;
+  const pdfPath = rootFile ? path.resolve(root, readConfig(root).directories?.build || '.texpro/build', path.basename(rootFile, path.extname(rootFile)) + '.pdf') : null;
   const pdfFonts = [];
   if (pdfPath && fs.existsSync(pdfPath)) {
     try {
@@ -1204,161 +1162,6 @@ async function fontCoverage(projectRoot) {
     if (!font.embedded) issues.push({ severity: 'warning', message: `PDF font not embedded: ${font.name}`, file: pdfPath || '', line: 0 });
   }
   return { scripts, declared: [...declared], fontChecks, pdfFonts, issues, pdfPath };
-}
-
-
-function historyDir(root) { return path.join(root, '.texpro', 'history'); }
-function historyChunks(text) {
-  const lines = text.split('\n');
-  const chunks = [];
-  let current = '';
-  for (const line of lines) {
-    current += line + '\n';
-    if (current.length >= 4096) {
-      chunks.push(current);
-      current = '';
-    }
-  }
-  if (current) chunks.push(current);
-  return chunks.length ? chunks : [''];
-}
-
-function listHistory(root) {
-  const dir = path.join(historyDir(root), 'manifests');
-  let files = [];
-  try { files = fs.readdirSync(dir).filter((name) => name.endsWith('.json')); } catch { return []; }
-  const versions = [];
-  for (const name of files) {
-    try {
-      const manifest = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
-      versions.push({
-        id: manifest.id,
-        time: manifest.time,
-        reason: manifest.reason,
-        files: Object.keys(manifest.files || {}),
-        size: Object.values(manifest.files || {}).reduce((sum, item) => sum + (item.size || 0), 0),
-      });
-    } catch { /* skip broken manifest */ }
-  }
-  return versions.sort((a, b) => b.time - a.time);
-}
-
-function commitHistory(root, reason = 'manual') {
-  const dir = historyDir(root);
-  fs.mkdirSync(path.join(dir, 'objects'), { recursive: true });
-  fs.mkdirSync(path.join(dir, 'manifests'), { recursive: true });
-  const files = {};
-  const visit = (current, depth) => {
-    if (depth > 6) return;
-    let entries = [];
-    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      if (entry.name.startsWith('.') || IGNORED_DIRS.has(entry.name)) continue;
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) { visit(full, depth + 1); continue; }
-      const ext = path.extname(entry.name).toLowerCase();
-      if (!['.tex', '.ltx', '.bib', '.sty', '.cls', '.md', '.txt'].includes(ext)) continue;
-      const stat = fs.statSync(full);
-      if (stat.size > 2_000_000) continue;
-      const text = fs.readFileSync(full, 'utf8');
-      const contentHash = crypto.createHash('sha256').update(text).digest('hex');
-      const chunks = historyChunks(text).map((chunk) => {
-        const hash = crypto.createHash('sha256').update(chunk).digest('hex');
-        const object = path.join(dir, 'objects', hash.slice(0, 2), hash + '.br');
-        if (!fs.existsSync(object)) {
-          fs.mkdirSync(path.dirname(object), { recursive: true });
-          fs.writeFileSync(object, zlib.brotliCompressSync(Buffer.from(chunk, 'utf8'), { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 6 } }));
-        }
-        return hash;
-      });
-      files[path.relative(root, full).replace(/\\/g, '/')] = { hash: contentHash, chunks, size: stat.size };
-    }
-  };
-  visit(root, 0);
-  const previous = listHistory(root)[0];
-  if (previous) {
-    const prev = JSON.parse(fs.readFileSync(path.join(dir, 'manifests', previous.id + '.json'), 'utf8'));
-    const same = Object.keys(files).length === Object.keys(prev.files || {}).length && Object.entries(files).every(([file, item]) => prev.files?.[file]?.hash === item.hash);
-    if (same) return { ok: true, skipped: true, version: previous };
-  }
-  const id = new Date().toISOString().replace(/[:.]/g, '-') + '-' + crypto.randomBytes(2).toString('hex');
-  const manifest = { id, time: Date.now(), reason, files };
-  fs.writeFileSync(path.join(dir, 'manifests', id + '.json'), JSON.stringify(manifest));
-  const versions = listHistory(root);
-  const keep = 80;
-  for (const old of versions.slice(keep)) {
-    try { fs.unlinkSync(path.join(dir, 'manifests', old.id + '.json')); } catch { /* ignore */ }
-  }
-  return { ok: true, skipped: false, version: { id, time: manifest.time, reason, files: Object.keys(files), size: Object.values(files).reduce((sum, item) => sum + item.size, 0) } };
-}
-
-function readHistoryFile(root, versionId, file) {
-  const dir = historyDir(root);
-  if (!/^[\w.-]+$/.test(versionId)) throw new Error('Invalid version id');
-  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifests', versionId + '.json'), 'utf8'));
-  const entry = manifest.files?.[file];
-  if (!entry) throw new Error('File is not in this version');
-  let text = '';
-  for (const hash of entry.chunks) {
-    const object = path.join(dir, 'objects', hash.slice(0, 2), hash + '.br');
-    text += zlib.brotliDecompressSync(fs.readFileSync(object)).toString('utf8');
-  }
-  return text;
-}
-
-function restoreHistoryFile(root, versionId, file) {
-  const content = readHistoryFile(root, versionId, file);
-  const target = path.resolve(root, file);
-  if (!target.startsWith(path.resolve(root) + path.sep)) throw new Error('File is outside the project');
-  fs.writeFileSync(target, content, 'utf8');
-  return { ok: true, file, bytes: Buffer.byteLength(content) };
-}
-
-
-function historyGc(root) {
-  const dir = historyDir(root);
-  const manifestsDir = path.join(dir, 'manifests');
-  const used = new Set();
-  let manifests = [];
-  try { manifests = fs.readdirSync(manifestsDir).filter((name) => name.endsWith('.json')); } catch { /* empty */ }
-  for (const name of manifests) {
-    try {
-      const manifest = JSON.parse(fs.readFileSync(path.join(manifestsDir, name), 'utf8'));
-      for (const entry of Object.values(manifest.files || {})) {
-        for (const hash of entry.chunks || []) used.add(hash);
-      }
-    } catch { /* ignore */ }
-  }
-  let removed = 0;
-  let bytes = 0;
-  const visit = (current) => {
-    let entries = [];
-    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries) {
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) { visit(full); continue; }
-      if (!entry.name.endsWith('.br')) continue;
-      const hash = entry.name.slice(0, -3);
-      if (!used.has(hash)) {
-        try { bytes += fs.statSync(full).size; fs.unlinkSync(full); removed += 1; } catch { /* ignore */ }
-      }
-    }
-  };
-  visit(path.join(dir, 'objects'));
-  return { removed, bytes };
-}
-
-function deleteHistoryVersion(root, versionId) {
-  if (!/^[\w.-]+$/.test(String(versionId))) throw new Error('Invalid version id');
-  const file = path.join(historyDir(root), 'manifests', versionId + '.json');
-  if (fs.existsSync(file)) fs.unlinkSync(file);
-  return { ok: true, deleted: versionId, ...historyGc(root) };
-}
-
-function clearHistory(root) {
-  const dir = historyDir(root);
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-  return { ok: true };
 }
 
 
@@ -1486,6 +1289,7 @@ function moveProjectFile(projectRoot, file, targetDir) {
   const newPath = path.join(destinationDir, path.basename(oldPath));
   if (fs.existsSync(newPath)) throw new Error('A file with that name already exists in the target folder');
   fs.renameSync(oldPath, newPath);
+  rebaseConfiguredRoot(root, oldPath, newPath);
   let updated = 0;
   const visit = (dir, depth) => {
     if (depth > 6) return;
@@ -1622,84 +1426,6 @@ async function convertSvgReferences(projectRoot) {
 }
 
 
-function runGit(args, cwd, timeout = 60000) {
-  return new Promise((resolve) => {
-    const child = spawn('git', args, { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* ignore */ } }, timeout);
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-    child.on('error', (error) => { clearTimeout(timer); resolve({ code: null, stdout, stderr: stderr + String(error) }); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
-  });
-}
-
-async function gitStatus(projectRoot) {
-  const root = path.resolve(projectRoot);
-  const inside = await runGit(['rev-parse', '--is-inside-work-tree'], root);
-  if (inside.code !== 0) return { initialized: false, branch: '', changes: [], ahead: 0, behind: 0 };
-  const branch = await runGit(['branch', '--show-current'], root);
-  const status = await runGit(['status', '--porcelain=v1', '-b'], root);
-  const lines = status.stdout.split('\n').filter(Boolean);
-  const summary = lines[0] || '';
-  const changes = lines.slice(1).map((line) => ({ status: line.slice(0, 2).trim(), file: line.slice(3) }));
-  const ahead = Number((summary.match(/ahead (\d+)/) || [])[1] || 0);
-  const behind = Number((summary.match(/behind (\d+)/) || [])[1] || 0);
-  const log = await runGit(['log', '--oneline', '-8'], root);
-  return {
-    initialized: true,
-    branch: branch.stdout.trim(),
-    changes,
-    ahead,
-    behind,
-    commits: log.stdout.split('\n').filter(Boolean).map((line) => {
-      const [hash, ...rest] = line.split(' ');
-      return { hash, subject: rest.join(' ') };
-    }),
-  };
-}
-
-async function gitInit(projectRoot) {
-  const result = await runGit(['init'], path.resolve(projectRoot));
-  if (result.code !== 0) throw new Error(result.stderr || 'git init failed');
-  return { ok: true };
-}
-
-async function gitCommit(projectRoot, message) {
-  const root = path.resolve(projectRoot);
-  await runGit(['add', '-A'], root);
-  const result = await runGit(['commit', '-m', String(message || 'Update from TeXPro')], root);
-  if (result.code !== 0) throw new Error(result.stderr || result.stdout || 'git commit failed');
-  return { ok: true, output: result.stdout };
-}
-
-async function gitPull(projectRoot) {
-  const result = await runGit(['pull', '--ff-only'], path.resolve(projectRoot), 120000);
-  if (result.code !== 0) throw new Error(result.stderr || 'git pull failed');
-  return { ok: true, output: result.stdout };
-}
-
-async function gitPush(projectRoot) {
-  const result = await runGit(['push'], path.resolve(projectRoot), 120000);
-  if (result.code !== 0) throw new Error(result.stderr || 'git push failed');
-  return { ok: true, output: result.stdout };
-}
-
-async function overleafClone(url) {
-  const target = String(url || '').trim();
-  if (!/^https:\/\/git\.overleaf\.com\/[A-Za-z0-9_-]+(?:\.git)?\/?$/.test(target)) throw new Error('Enter an Overleaf Git URL: https://git.overleaf.com/<project-id>');
-  const id = target.replace(/\/$/, '').split('/').pop();
-  const parent = path.join(require('node:os').homedir(), 'Documents', 'TeXPro Projects');
-  fs.mkdirSync(parent, { recursive: true });
-  const destination = path.join(parent, `overleaf-${id}`);
-  if (fs.existsSync(destination)) throw new Error('That Overleaf project is already cloned in ~/Documents/TeXPro Projects');
-  const result = await runGit(['clone', '--depth', '1', target, destination], parent, 180000);
-  if (result.code !== 0) throw new Error(result.stderr || 'git clone failed');
-  return { path: destination };
-}
-
-
 async function zoteroLibrary() {
   const response = await fetch('http://127.0.0.1:23119/better-bibtex/export/library?/1/library.bibtex', {
     signal: AbortSignal.timeout(20000),
@@ -1791,13 +1517,17 @@ async function runProjectAction(projectRoot, action, rootFile) {
   const command = String(action.command).replace(/^txs:\/\/\//, '');
   const args = Array.isArray(action.args) ? action.args.map(String) : [];
   const cwd = action.cwd ? path.resolve(root, String(action.cwd)) : root;
-  if (!cwd.startsWith(root)) throw new Error('Action working directory must stay inside the project');
-  const rootPath = path.resolve(rootFile || '');
+  if (cwd !== root && !cwd.startsWith(root + path.sep)) throw new Error('Action working directory must stay inside the project');
+  const rootPath = resolveCompileRoot(projectRoot, null, rootFile);
   const rootName = path.basename(rootPath, path.extname(rootPath));
+  const buildPath = path.resolve(root, readConfig(root).directories?.build || '.texpro/build');
+  if (!buildPath.startsWith(root + path.sep)) throw new Error('Build directory must stay inside the project');
+  fs.mkdirSync(buildPath, { recursive: true });
   const expanded = args.map((arg) => arg
     .replaceAll('{rootFile}', path.relative(cwd, rootPath))
     .replaceAll('{rootName}', rootName)
-    .replaceAll('{projectRoot}', '.'));
+    .replaceAll('{buildDir}', path.relative(cwd, buildPath))
+    .replaceAll('{projectRoot}', path.relative(cwd, root) || '.'));
   const texBinaries = new Set(['latexmk', 'pdflatex', 'xelatex', 'lualatex', 'bibtex', 'biber', 'makeindex']);
   const executable = texBinaries.has(command) ? resolveTexBinary(command) : command;
   return new Promise((resolve) => {
@@ -1881,8 +1611,8 @@ function texEnvironment(projectRoot) {
     '/usr/bin',
     '/bin',
   ];
-  const current = (process.env.PATH || '').split(':').filter(Boolean);
-  const merged = [...new Set([...pathEntries, ...current])].join(':');
+  const current = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const merged = [...new Set([...pathEntries, ...current])].join(path.delimiter);
   const env = {
     ...process.env,
     PATH: merged,
@@ -1913,31 +1643,6 @@ function detectEngine(text, requested) {
   return 'pdflatex';
 }
 
-function detectMagicRoot(activeFile, text, projectRoot) {
-  const magic = text.match(/^\s*%\s*!TEX\s+root\s*=\s*(.+)$/im);
-  if (!magic) return null;
-  const value = magic[1].trim().replace(/^["']|["']$/g, '');
-  const resolved = path.isAbsolute(value) ? value : path.resolve(path.dirname(activeFile), value);
-  if (fs.existsSync(resolved)) return resolved;
-  const inRoot = path.resolve(projectRoot, value);
-  return fs.existsSync(inRoot) ? inRoot : null;
-}
-
-function resolveRoot(projectRoot, activeFile, fallbackRoot) {
-  if (activeFile && fs.existsSync(activeFile)) {
-    let text = '';
-    try {
-      text = fs.readFileSync(activeFile, 'utf8');
-    } catch {
-      // ignore
-    }
-    const magic = detectMagicRoot(activeFile, text, projectRoot);
-    if (magic) return magic;
-    if (/\\documentclass\b/.test(text)) return activeFile;
-  }
-  if (fallbackRoot && fs.existsSync(fallbackRoot)) return fallbackRoot;
-  return findRootFile(projectRoot);
-}
 
 function cleanLogText(text) {
   return text.replace(/\r\n/g, '\n').replace(/\u001b\[[0-9;]*[A-Za-z]/g, '');
@@ -2069,7 +1774,9 @@ function cancelCompilation(runId) {
 
 async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeoutMs = 180000, runId, buildDir: buildDirOption, onData }) {
   const started = Date.now();
-  const rootFile = resolveRoot(projectRoot, activeFile, fallbackRoot);
+  let rootFile;
+  try { rootFile = resolveCompileRoot(projectRoot, activeFile, fallbackRoot); }
+  catch (error) { return { ok: false, error: error.message, diagnostics: [], duration: 0 }; }
   if (!rootFile) {
     return {
       ok: false,
@@ -2085,7 +1792,7 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
     // ignore
   }
   const selectedEngine = detectEngine(rootText, engine);
-  const buildDir = path.resolve(projectRoot, buildDirOption || '.texpro/build');
+  const buildDir = path.resolve(projectRoot, readConfig(projectRoot).directories?.build || buildDirOption || '.texpro/build');
   if (!buildDir.startsWith(path.resolve(projectRoot) + path.sep)) {
     return { ok: false, error: 'Build directory must stay inside the project', diagnostics: [], duration: 0 };
   }
@@ -2223,6 +1930,8 @@ async function synctexForward({ projectRoot, texFile, pdfFile, line, column = 0 
     const width = parseSynctexValue(stdout, 'W');
     const height = parseSynctexValue(stdout, 'H');
     if (!page || !x || !y) return { ok: false, error: 'No SyncTeX result', raw: stdout };
+    const box = { x: Number(h), y: Number(v) - Number(height), width: Number(width), height: Number(height) };
+    const bounds = h !== null && v !== null && width !== null && height !== null && Object.values(box).every(Number.isFinite) && box.width > 0 && box.height > 0 ? box : undefined;
     return {
       ok: true,
       page: Number(page),
@@ -2232,6 +1941,7 @@ async function synctexForward({ projectRoot, texFile, pdfFile, line, column = 0 
       v: v ? Number(v) : null,
       width: width ? Number(width) : null,
       height: height ? Number(height) : null,
+      bounds,
       raw: stdout,
     };
   } catch (error) {
@@ -2253,9 +1963,13 @@ async function synctexInverse({ projectRoot, pdfFile, page, x, y }) {
     const line = parseSynctexValue(stdout, 'Line');
     const column = parseSynctexValue(stdout, 'Column');
     if (!input || !line) return { ok: false, error: 'No SyncTeX source result', raw: stdout };
+    const realRoot = fs.realpathSync(projectRoot);
+    const realInput = fs.realpathSync(path.resolve(projectRoot, input));
+    if (!realInput.startsWith(realRoot + path.sep)) return { ok: false, error: 'SyncTeX source is outside the project' };
+    const sourceFile = path.join(path.resolve(projectRoot), path.relative(realRoot, realInput));
     return {
       ok: true,
-      file: input,
+      file: sourceFile,
       line: Number(line),
       column: column && Number(column) > 0 ? Number(column) : 1,
       raw: stdout,
@@ -2266,6 +1980,8 @@ async function synctexInverse({ projectRoot, pdfFile, page, x, y }) {
 }
 
 module.exports = {
+  ...history,
+  ...git,
   openProject,
   ensureDemoProject,
   readTextFile,
@@ -2280,12 +1996,6 @@ module.exports = {
   createArxivPackage,
   rasterizeSvg,
   convertSvgReferences,
-  gitStatus,
-  gitInit,
-  gitCommit,
-  gitPull,
-  gitPush,
-  overleafClone,
   zoteroLibrary,
   zoteroSearch,
   zoteroBibtex,
@@ -2300,12 +2010,6 @@ module.exports = {
   deleteProjectFile,
   deleteProjectFolder,
   fontCoverage,
-  commitHistory,
-  listHistory,
-  readHistoryFile,
-  restoreHistoryFile,
-  deleteHistoryVersion,
-  clearHistory,
   backupProject,
   renameProjectFile,
   moveProjectDirectory,
@@ -2319,7 +2023,7 @@ module.exports = {
   saveUserTemplate,
   deleteUserTemplate,
   runCompile,
-  resolveRoot,
+  resolveRoot: resolveCompileRoot,
   synctexForward,
   synctexInverse,
   findRootFile,

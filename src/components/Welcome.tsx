@@ -1,19 +1,6 @@
-import {
-  ArrowRight,
-  BookMarked,
-  BookOpen,
-  Command,
-  FileText,
-  FolderOpen,
-  GraduationCap,
-  LayoutTemplate,
-  PenTool,
-  Play,
-  Settings2,
-  Sparkles,
-} from 'lucide-react';
+import { ArrowRight, BookOpen, Command, FileText, FolderOpen, LayoutTemplate, Search, Settings2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { RecentProject } from '../types';
-import { Logo } from './Logo';
 import { useI18n } from '../i18n';
 
 interface Props {
@@ -26,124 +13,60 @@ interface Props {
   onPalette: () => void;
 }
 
-const quickTemplates = [
-  { key: 'Article', icon: FileText },
-  { key: 'Report', icon: BookOpen },
-  { key: 'Beamer slides', icon: Play },
-  { key: 'Chinese article (ctex)', icon: GraduationCap },
-];
-
-export function Welcome({
-  recent,
-  onOpenFolder,
-  onDemo,
-  onOpenRecent,
-  onTemplates,
-  onOpenSettings,
-  onPalette,
-}: Props) {
-  const { t } = useI18n();
+export function Welcome({ recent, onOpenFolder, onDemo, onOpenRecent, onTemplates, onOpenSettings, onPalette }: Props) {
+  const { t, language } = useI18n();
+  const [query, setQuery] = useState('');
+  const filtered = useMemo(() => recent.filter(project => `${project.name} ${project.root}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())), [query, recent]);
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(language === 'zh' ? 'zh-CN' : 'en', { month: 'short', day: 'numeric' }), [language]);
   return (
-    <main className="start-page">
-      <div className="start-inner">
-        <header className="start-header">
-          <div className="start-brand">
-            <Logo size={34} />
-            <div>
-              <h1>{t('Start writing')}</h1>
-              <p>{t('Visual LaTeX Workbench')} · TeXPro</p>
-            </div>
-          </div>
-          <div className="start-actions">
-            <button className="primary-btn" onClick={onTemplates}>
-              <LayoutTemplate size={14} />
-              {t('New from template')}
-            </button>
-            <button className="secondary-btn" onClick={onOpenFolder}>
-              <FolderOpen size={14} />
-              {t('Open folder')}
-            </button>
-            <button className="secondary-btn" onClick={onDemo}>
-              <Sparkles size={14} />
-              {t('Demo project')}
-            </button>
-          </div>
+    <main className="welcome-page" data-testid="welcome">
+      <div className="welcome-inner">
+        <header className="welcome-heading">
+          <span className="welcome-eyebrow">TeXPro <span>/</span> {t('Your writing desk')}</span>
+          <h1>{t('Start writing')}</h1>
+          <p>{t('A place for your next page, and every page after it.')}</p>
         </header>
-
-        <div className="start-grid">
-          <section className="start-main">
-            <div className="start-section-head">
-              <span>{t('Recent projects')}</span>
-              <span className="start-count">{recent.length}</span>
+        <div className="welcome-grid">
+          <section className="welcome-projects" aria-labelledby="welcome-recent-title">
+            <div className="welcome-section-heading">
+              <h2 id="welcome-recent-title">{t('Recent projects')} <span>{recent.length.toString().padStart(2, '0')}</span></h2>
+              {recent.length > 3 && <label className="welcome-search"><Search size={14} /><input aria-label={t('Find a project')} placeholder={t('Find a project')} value={query} onChange={event => setQuery(event.target.value)} /></label>}
             </div>
-            <div className="start-recent">
-              {recent.map((project) => (
-                <button key={project.root} className="start-recent-row" onClick={() => onOpenRecent(project)}>
-                  <span className="start-recent-icon"><BookOpen size={15} /></span>
-                  <span className="start-recent-copy">
-                    <strong>{project.name}</strong>
-                    <small>{project.root}</small>
-                  </span>
-                  <time>{new Date(project.openedAt).toLocaleDateString()}</time>
-                  <ArrowRight size={13} />
-                </button>
-              ))}
-              {recent.length === 0 && (
-                <div className="start-empty">
-                  <FolderOpen size={22} />
-                  <strong>{t('No recent projects yet.')}</strong>
-                  <span>{t('Open a folder with .tex files.')}</span>
-                  <button className="secondary-btn" onClick={onOpenFolder}>
-                    <FolderOpen size={13} /> {t('Open folder')}
-                  </button>
-                </div>
-              )}
+            <div className="welcome-recent">
+              {filtered.map((project, index) => <button key={project.root} className="welcome-project-row" onClick={() => onOpenRecent(project)} title={project.root}>
+                <span className="welcome-project-index" aria-hidden="true">{(index + 1).toString().padStart(2, '0')}</span>
+                <span className="welcome-project-copy"><strong>{project.name}</strong><small>{project.root}</small></span>
+                <time dateTime={new Date(project.openedAt).toISOString()}>{dateFormat.format(project.openedAt)}</time>
+                <ArrowRight size={16} aria-hidden="true" />
+              </button>)}
+              {!filtered.length && <div className="welcome-empty">
+                <BookOpen size={28} strokeWidth={1.3} />
+                <h3>{t(recent.length ? 'No matching projects' : 'Your first page starts here')}</h3>
+                <p>{t(recent.length ? 'Try a project name or folder path.' : 'Open an existing LaTeX folder, or start with a template.')}</p>
+                {recent.length > 0 && <button className="welcome-text-button" onClick={() => setQuery('')}>{t('Clear search')} <ArrowRight size={13} /></button>}
+              </div>}
             </div>
-
-            <div className="start-section-head">
-              <span>{t('Templates')}</span>
-              <button className="start-link" onClick={onTemplates}>{t('Browse all')} <ArrowRight size={11} /></button>
-            </div>
-            <div className="start-template-grid">
-              {quickTemplates.map(({ key, icon: Icon }) => (
-                <button key={key} className="start-template-card" onClick={onTemplates}>
-                  <span className="start-template-icon"><Icon size={16} /></span>
-                  <span>
-                    <strong>{t(key)}</strong>
-                    <small>{t('Start from a ready-to-compile layout')}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
+            <p className="welcome-recent-note">{t('Your files stay in their project folders.')}</p>
           </section>
-
-          <aside className="start-side">
-            <div className="start-card">
-              <div className="start-card-title"><Command size={13} /> {t('Quick actions')}</div>
-              <button onClick={onPalette}><Command size={13} /><span>{t('Command palette')}</span><kbd>⌘K</kbd></button>
-              <button onClick={onOpenSettings}><Settings2 size={13} /><span>{t('Settings')}</span><kbd>⌘,</kbd></button>
-              <button onClick={onTemplates}><LayoutTemplate size={13} /><span>{t('Templates')}</span></button>
-              <button onClick={onOpenFolder}><FolderOpen size={13} /><span>{t('Open folder')}</span><kbd>⌘O</kbd></button>
-            </div>
-
-            <div className="start-card">
-              <div className="start-card-title"><PenTool size={13} /> {t('Getting started')}</div>
-              <ol className="start-checklist">
-                <li><span>1</span>{t('Open a folder with .tex files.')}</li>
-                <li><span>2</span>{t('Compile with ⌘↩.')}</li>
-                <li><span>3</span>{t('⌘-click the PDF to jump back.')}</li>
+          <aside className="welcome-start" aria-labelledby="welcome-start-title">
+            <h2 id="welcome-start-title">{t('Begin a project')}</h2>
+            <button className="welcome-open" onClick={onOpenFolder}><FolderOpen size={18} /><span>{t('Open folder')}<small>{t('Continue an existing LaTeX project')}</small></span><kbd>⌘O</kbd></button>
+            <button className="welcome-template" onClick={onTemplates}><LayoutTemplate size={18} /><span>{t('New from template')}<small>{t('Articles, reports and presentations')}</small></span><ArrowRight size={15} /></button>
+            <button className="welcome-text-button welcome-demo" onClick={onDemo}><FileText size={14} />{t('Explore the demo project')}<ArrowRight size={13} /></button>
+            <div className="welcome-guide">
+              <h3>{t('From source to page')}</h3>
+              <ol>
+                <li><span>1</span><p>{t('Choose the project main file.')}<small>{t('One entry for every chapter.')}</small></p></li>
+                <li><span>2</span><p>{t('Compile with ⌘↩.')}<small>{t('All edited files are saved first.')}</small></p></li>
+                <li><span>3</span><p>{t('⌘-click the PDF to jump back.')}<small>{t('Or select a region to find its source.')}</small></p></li>
               </ol>
-            </div>
-
-            <div className="start-card start-workflow">
-              <div className="start-card-title"><BookMarked size={13} /> {t('Workflow')}</div>
-              <p>{t('Inline math, tables, TikZ and references render in place. PDF is on demand.')}</p>
-              <div className="start-chips">
-                <span>KaTeX</span><span>SyncTeX</span><span>pgfplots</span><span>BibTeX</span>
-              </div>
             </div>
           </aside>
         </div>
+        <footer className="welcome-footer">
+          <span>{t('Visual LaTeX Workbench')}</span>
+          <div><button onClick={onPalette}><Command size={13} />{t('Command palette')}<kbd>⌘K</kbd></button><button onClick={onOpenSettings}><Settings2 size={13} />{t('Settings')}<kbd>⌘,</kbd></button></div>
+        </footer>
       </div>
     </main>
   );

@@ -1,0 +1,96 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const tex = require('./services/tex.cjs');
+
+module.exports = async function projectRegression(window, ipcMain, { js, waitFor, click, pause, screenshot, open }) {
+  window.setSize(1440,900); await pause(300);
+  const main = await js(`document.querySelector('[data-testid="project-main-file"]').value`);
+  const root = path.dirname(main);
+  const alt = path.join(root,'another.tex');
+  const child=path.join(root,'close-test.tex');
+  fs.writeFileSync(child,'A chapter buffer\n');
+  fs.writeFileSync(alt,'\\documentclass{article}\n\\begin{document}\nA second document\n\\end{document}\n');
+  // Dirty source must survive close, and failures must leave it editable.
+  await open('visual');
+  await js(`document.querySelector('.cm-content').focus()`);
+  await window.webContents.insertText('% saved on close\n');
+  // Save failure is recoverable and must keep the workbench mounted.
+  const handlers = ipcMain._invokeHandlers;
+  const writeChannel = 'file:write';
+  const originalWrite = handlers.get(writeChannel);
+  assert.ok(writeChannel,'write IPC channel exists');
+  ipcMain.removeHandler(writeChannel);
+  ipcMain.handle(writeChannel, async () => { throw new Error('Save failure (regression)'); });
+  await open('close-project');
+  await waitFor(`Boolean(document.querySelector('.toast.error, .toast-error')) || [...document.querySelectorAll('.toast')].some(e=>/Save failed|保存失败/.test(e.textContent))`);
+  assert.ok(await js(`Boolean(document.querySelector('.workbench'))`));
+  ipcMain.removeHandler(writeChannel);
+  ipcMain.handle(writeChannel, originalWrite);
+  await open('close-project');
+  await waitFor(`Boolean(document.querySelector('[data-testid="welcome"]'))`);
+  assert.ok(fs.readFileSync(main,'utf8').includes('% saved on close'));
+  assert.equal(await js(`document.querySelectorAll('.pdf-page,.cm-content').length`),0);
+  await js(`document.querySelectorAll('.toast .icon-btn, .toast button').forEach(e=>e.click())`);
+  for (const theme of ['paper','night','studio']) {
+    await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`); await pause();
+    await screenshot(`welcome-${theme}`);
+  }
+  window.setSize(1000,640); await pause(300); await screenshot('welcome-narrow');
+  assert.ok(await js(`document.querySelector('.welcome-page').scrollWidth<=document.querySelector('.welcome-page').clientWidth`));
+  assert.ok(await js(`(() => { const open=document.querySelector('.welcome-open').getBoundingClientRect(); const template=document.querySelector('.welcome-template').getBoundingClientRect(); return open.width>250 && template.top>open.bottom; })()`));
+  await js(`document.documentElement.dataset.theme='paper'`);
+  await click('.welcome-project-row');
+  await waitFor(`Boolean(document.querySelector('.cm-content')) && document.querySelector('[data-testid="project-main-file"]').value===''`);
+  assert.ok(await js(`document.querySelector('[data-testid="project-main-file"]').options.length>=3`));
+  await screenshot('main-ambiguous');
+  await js(`(() => { const el=document.querySelector('[data-testid="project-main-file"]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(el,${JSON.stringify(alt)}); el.dispatchEvent(new Event('change',{bubbles:true})); })()`);
+  await waitFor(`document.querySelector('[data-testid="project-main-file"]').value===${JSON.stringify(alt)}`);
+  await waitFor(`document.querySelector('.titlebar-main-file strong').textContent==='another.tex'`);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root,'.texpro/project.json'),'utf8')).rootFile,'another.tex');
+  await screenshot('main-selected');
+  await click('.titlebar-main-file');
+  await waitFor(`document.querySelector('.titlebar-file-name').textContent==='another.tex'`);
+  await js(`document.querySelector('.cm-content').focus()`);
+  window.webContents.sendInputEvent({type:'keyDown',keyCode:'Down',modifiers:['meta']});
+  window.webContents.sendInputEvent({type:'keyUp',keyCode:'Down',modifiers:['meta']});
+  await pause(120);
+  await window.webContents.insertText('\n% main buffer saved on close\n'); await pause();
+  await js(`[...document.querySelectorAll('.tree-file')].find(e=>e.title.startsWith('close-test.tex')).click()`);
+  await waitFor(`document.querySelector('.titlebar-file-name').textContent==='close-test.tex' && Boolean(document.querySelector('.cm-content'))`);
+  await js(`document.querySelector('.cm-content').focus()`);
+  await window.webContents.insertText('% child buffer saved on close\n'); await pause();
+  await open('project-structure');
+  await click('.project-studio .studio-footer .primary-btn');
+  await waitFor(`document.querySelector('.titlebar-file-name').textContent==='another.tex' && document.querySelector('.cm-content').textContent.includes('TeXPro modules begin')`);
+  await click('.brand');
+  await waitFor(`Boolean(document.querySelector('[data-testid="welcome"]'))`);
+  assert.ok(fs.readFileSync(alt,'utf8').includes('% main buffer saved on close'));
+  assert.ok(fs.readFileSync(alt,'utf8').includes('TeXPro modules begin'));
+  assert.ok(fs.readFileSync(child,'utf8').includes('% child buffer saved on close'));
+  assert.ok(!fs.readFileSync(child,'utf8').includes('TeXPro modules begin'));
+  await click('.welcome-project-row');
+  await waitFor(`Boolean(document.querySelector('.cm-content')) && document.querySelector('[data-testid="project-main-file"]').value===${JSON.stringify(alt)}`);
+  assert.ok(await js(`document.querySelector('.titlebar-file-name').textContent==='another.tex'`));
+  console.log('PASS save failure keeps project; close saves edits; Welcome themes and main-file selection persist on reopen');
+
+  // A pending compilation resolving after close must never restore its PDF.
+  const compileChannel = 'compile:run';
+  assert.ok(handlers.has(compileChannel));
+  const originalCompile = handlers.get(compileChannel);
+  ipcMain.removeHandler(compileChannel);
+  let complete;
+  ipcMain.handle(compileChannel, () => new Promise(resolve=>{complete=resolve;}));
+  await click('.compile-btn');
+  const started=Date.now(); while(!complete && Date.now()-started<5000) await pause();
+  assert.ok(complete);
+  await click('.brand');
+  await waitFor(`Boolean(document.querySelector('[data-testid="welcome"]'))`);
+  complete({ok:true,pdfPath:path.join(root,'.texpro/build/main.pdf'),rootFile:alt,diagnostics:[],duration:12});
+  await pause(250);
+  assert.equal(await js(`document.querySelectorAll('.workbench,.pdf-page').length`),0);
+  ipcMain.removeHandler(compileChannel); ipcMain.handle(compileChannel,originalCompile);
+  await screenshot('welcome-final');
+  console.log('PASS closing during compilation ignores late output and stays on Welcome');
+};

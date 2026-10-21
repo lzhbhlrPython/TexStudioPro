@@ -8,13 +8,13 @@ export interface ProjectAction {
 }
 
 export const defaultActions: ProjectAction[] = [
-  { id: 'latexmk', name: 'latexmk · PDF', command: 'latexmk', args: ['-pdf', '-interaction=nonstopmode', '-synctex=1', '{rootFile}'] },
-  { id: 'pdflatex', name: 'pdfLaTeX', command: 'pdflatex', args: ['-interaction=nonstopmode', '-synctex=1', '{rootFile}'] },
-  { id: 'xelatex', name: 'XeLaTeX', command: 'xelatex', args: ['-interaction=nonstopmode', '-synctex=1', '{rootFile}'] },
-  { id: 'lualatex', name: 'LuaLaTeX', command: 'lualatex', args: ['-interaction=nonstopmode', '-synctex=1', '{rootFile}'] },
-  { id: 'bibtex', name: 'BibTeX', command: 'bibtex', args: ['{rootName}'] },
-  { id: 'biber', name: 'Biber', command: 'biber', args: ['{rootName}'] },
-  { id: 'makeindex', name: 'MakeIndex', command: 'makeindex', args: ['{rootName}.idx'] },
+  { id: 'latexmk', name: 'latexmk · PDF', command: 'latexmk', args: ['-outdir={buildDir}', '-pdf', '-interaction=nonstopmode', '-synctex=1', '{rootFile}'] },
+  { id: 'pdflatex', name: 'pdfLaTeX', command: 'pdflatex', args: ['-output-directory={buildDir}', '-interaction=nonstopmode', '-synctex=1', '{rootFile}'] },
+  { id: 'xelatex', name: 'XeLaTeX', command: 'xelatex', args: ['-output-directory={buildDir}', '-interaction=nonstopmode', '-synctex=1', '{rootFile}'] },
+  { id: 'lualatex', name: 'LuaLaTeX', command: 'lualatex', args: ['-output-directory={buildDir}', '-interaction=nonstopmode', '-synctex=1', '{rootFile}'] },
+  { id: 'bibtex', name: 'BibTeX', command: 'bibtex', args: ['{buildDir}/{rootName}'] },
+  { id: 'biber', name: 'Biber', command: 'biber', args: ['--input-directory={buildDir}', '--output-directory={buildDir}', '{rootName}'] },
+  { id: 'makeindex', name: 'MakeIndex', command: 'makeindex', args: ['{buildDir}/{rootName}.idx'] },
 ];
 
 /** Resolve TeXstudio-style txs:/// action references to plain executables. */

@@ -45,6 +45,8 @@ type SidebarTab = 'files' | 'outline' | 'assets' | 'symbols' | 'search';
 interface Props {
   project: Project | null;
   activePath: string | null;
+  compiling: boolean;
+  onSelectRoot: (path: string) => void;
   tab: SidebarTab;
   outline: OutlineItem[];
   cursorLine: number;
@@ -162,6 +164,8 @@ function outlineIcon(item: OutlineItem) {
 
 export function Sidebar({
   project,
+  compiling,
+  onSelectRoot,
   activePath,
   tab,
   outline,
@@ -321,6 +325,15 @@ export function Sidebar({
                 <span>{project ? project.root.replace(/^.*\/(?=[^/]+\/[^/]+$)/, '…/') : 'Open a folder to begin'}</span>
               </div>
             </div>
+            {project && <div className={`project-main-file ${project.rootFile ? '' : 'needs-selection'}`}>
+              <label htmlFor="project-main-file">{t('Main file')}<small>{t(project.rootSource === 'configured' ? 'Pinned to project' : project.rootFile ? 'Auto detected' : 'Choose main file')}</small></label>
+              <select id="project-main-file" data-testid="project-main-file" value={project.rootFile || ''} disabled={compiling} onChange={(event) => onSelectRoot(event.target.value)}>
+                {!project.rootFile && <option value="" disabled>{t('Choose main file')}</option>}
+                {(project.rootCandidates || (project.rootFile ? [project.rootFile] : [])).map(file => <option key={file} value={file}>{relativePath(project.root, file)}</option>)}
+              </select>
+              {!project.rootFile && <p role="status">{t(project.rootSource === 'ambiguous' ? 'Several documents found. Select the one to compile.' : project.rootSource === 'invalid' ? 'Main file is unavailable. Select a valid entry.' : 'Add a file containing \\documentclass to begin.')}</p>}
+              {project.rootError && <details className="project-root-details"><summary>{t('Details')}</summary><p>{project.rootError}</p></details>}
+            </div>}
             <div className="file-tree">
               {project ? (
                 project.tree.length ? (

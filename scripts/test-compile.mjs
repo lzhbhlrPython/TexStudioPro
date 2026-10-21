@@ -32,6 +32,7 @@ const forward = await tex.synctexForward({
   column: 0,
 });
 record('forward SyncTeX resolves page and coordinates', forward.ok, forward.ok ? `page ${forward.page}, y ${forward.y}` : forward.error);
+record('forward SyncTeX exposes a finite top-left box', Boolean(forward.bounds && Object.values(forward.bounds).every(Number.isFinite) && forward.bounds.width > 0 && forward.bounds.height > 0), JSON.stringify(forward.bounds));
 
 if (forward.ok) {
   const inverse = await tex.synctexInverse({
@@ -163,6 +164,28 @@ try {
 } finally {
   fs.rmSync(brokenRoot, { recursive: true, force: true });
 }
+
+const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'texpro-project-main-'));
+try {
+  fs.mkdirSync(path.join(projectRoot, '.texpro'));
+  fs.writeFileSync(path.join(projectRoot, '.texpro/project.json'), JSON.stringify({ rootFile: 'paper.tex', directories: {build:'output'} }));
+  fs.writeFileSync(path.join(projectRoot, 'paper.tex'), String.raw`\documentclass{article}
+\begin{document}
+\input{chapter}
+\end{document}
+`);
+  fs.writeFileSync(path.join(projectRoot, 'chapter.tex'), '% !TeX root = other.tex\nThe selected project main includes this chapter.\n');
+  fs.writeFileSync(path.join(projectRoot, 'other.tex'), String.raw`\documentclass{article}
+\begin{document}
+\thisMustNotCompile
+\end{document}`);
+  const result = await tex.runCompile({projectRoot, activeFile:path.join(projectRoot,'other.tex'), fallbackRoot:path.join(projectRoot,'other.tex'), buildDir:'wrong-build'});
+  record('project main wins over active document and stale caller hint', result.ok && result.rootFile === path.join(projectRoot,'paper.tex'), result.error || result.rootFile);
+  record('configured build directory wins across the toolchain', result.pdfPath === path.join(projectRoot,'output/paper.pdf') && fs.existsSync(result.pdfPath));
+  const forward = await tex.synctexForward({projectRoot, texFile:path.join(projectRoot,'chapter.tex'), pdfFile:result.pdfPath, line:2});
+  const inverse = forward.ok ? await tex.synctexInverse({projectRoot, pdfFile:result.pdfPath, page:forward.page,x:forward.x,y:forward.y}) : forward;
+  record('child SyncTeX maps back to the opened lexical project path', inverse.ok && inverse.file === path.join(projectRoot,'chapter.tex'), inverse.error || inverse.file);
+} finally { fs.rmSync(projectRoot,{recursive:true,force:true}); }
 
 const failed = results.filter((item) => !item.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

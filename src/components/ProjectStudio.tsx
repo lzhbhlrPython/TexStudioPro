@@ -22,7 +22,7 @@ interface Props {
   onClose: () => void;
   onSaveConfig: (config: ProjectConfig) => Promise<void>;
   onCreateModule: (title: string, file: string) => Promise<string | null>;
-  onApply: (config: ProjectConfig) => void;
+  onApply: (config: ProjectConfig) => Promise<void>;
 }
 
 function flattenTex(nodes: FileNode[]): FileNode[] {
@@ -48,11 +48,12 @@ export function ProjectStudio({
   const [moduleTitle, setModuleTitle] = useState('');
   const [moduleFile, setModuleFile] = useState('');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   const discovered = useMemo<ProjectModule[]>(() => {
     if (!project) return [];
     return flattenTex(project.tree)
-      .filter((node) => node.path !== project.rootFile)
+      .filter((node) => node.path !== project.rootFile && !project.rootCandidates?.includes(node.path))
       .map((node) => ({
         file: node.relative,
         title: stem(node.name),
@@ -62,6 +63,7 @@ export function ProjectStudio({
 
   useEffect(() => {
     if (!open) return;
+    setError('');
     const normalized = normalizeProjectConfig(config);
     const merged = [...normalized.modules];
     for (const item of discovered) {
@@ -119,9 +121,13 @@ export function ProjectStudio({
   };
 
   const apply = async () => {
-    await onSaveConfig(draft);
-    onApply(draft);
-    onClose();
+    setBusy(true); setError('');
+    try {
+      await onSaveConfig(draft);
+      await onApply(draft);
+      onClose();
+    } catch (error) { setError(String(error)); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -211,11 +217,12 @@ export function ProjectStudio({
           </div>
         </div>
 
+        {error && <p role="alert" className="project-config-error">{t('Save failed')}: {error}</p>}
         <footer className="studio-footer">
           <span className="studio-hint">{t('Project configuration is stored in .texpro/project.json.')}</span>
           <div className="spacer" />
           <button className="secondary-btn" onClick={onClose}>{t('Cancel')}</button>
-          <button className="primary-btn" onClick={() => void apply()} disabled={busy}>
+          <button className="primary-btn" onClick={() => void apply()} disabled={busy || !project?.rootFile}>
             <FolderTree size={13} /> {t('Save & apply')}
           </button>
         </footer>

@@ -102,7 +102,7 @@ export interface TexProApi {
     pdfPath: string | null;
   }>;
   historyList: (root: string) => Promise<Array<{ id: string; time: number; reason: string; files: string[]; size: number }>>;
-  historyCommit: (root: string, reason: string) => Promise<{ ok: boolean; skipped?: boolean; version: { id: string; time: number; reason: string; files: string[]; size: number } }>;
+  historyCommit: (root: string, reason: string) => Promise<{ ok: boolean; skipped?: boolean; reason?: string; version: { id: string; time: number; reason: string; files: string[]; size: number } | null }>;
   historyRead: (root: string, version: string, file: string) => Promise<string>;
   historyRestore: (root: string, version: string, file: string) => Promise<{ ok: boolean; file: string; bytes: number }>;
   historyDelete: (root: string, version: string) => Promise<{ ok: boolean; deleted: string; removed: number; bytes: number }>;
@@ -151,6 +151,7 @@ export interface TexProApi {
     y?: number;
     width?: number | null;
     height?: number | null;
+    bounds?: { x: number; y: number; width: number; height: number };
     error?: string;
   }>;
   syncInverse: (options: {

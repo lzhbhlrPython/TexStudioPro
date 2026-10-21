@@ -1,3 +1,6 @@
+import { TemplateGallery, PgfplotsStudio, PluginMarket, PaperStudio, CrewPanel, CompileTheater, CommandStudio, PackageManager, GitPanel, InkStudio, SchematicStudio, BackupPanel, VersionReview, FontCoverage, ProjectGraph, ArxivPanel, McpPanel, AIAssistant, CommentsPanel, ExportStudio, ProjectDoctor, TableStudio, ImportStudio, TemplateWorkshop, ProjectStudio, BibManager, FormulaStudio, LayoutStudio, TikzStudio } from './app/lazyTools';
+import { SETTINGS_KEY, RECENT_KEY, loadSettings, loadRecent } from './app/settings';
+import { findFirstTex, flattenFiles, isTextPath, normalizeFile, fileFromBuild, reanchorComments } from './app/project';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
@@ -62,6 +65,7 @@ import type {
   SearchResult,
   Settings,
   SyncTarget,
+  SourceJump,
   ProjectConfig,
   ReviewComment,
   TemplateItem,
@@ -83,158 +87,18 @@ import { Welcome } from './components/Welcome';
 import { CommandPalette, type PaletteAction } from './components/CommandPalette';
 import { SettingsPanel } from './components/SettingsPanel';
 import { Toasts, type ToastItem } from './components/Toasts';
-import { TemplateGallery } from './components/TemplateGallery';
-import { ProjectStudio } from './components/ProjectStudio';
-import { PgfplotsStudio } from './components/PgfplotsStudio';
-import { FormulaStudio } from './components/FormulaStudio';
-import { BibManager } from './components/BibManager';
 import { FilePreview } from './components/FilePreview';
-import { ImportStudio } from './components/ImportStudio';
-import { TemplateWorkshop } from './components/TemplateWorkshop';
-import { TableStudio } from './components/TableStudio';
-import { ProjectDoctor } from './components/ProjectDoctor';
-import { ExportStudio } from './components/ExportStudio';
-import { CommentsPanel } from './components/CommentsPanel';
-import { AIAssistant } from './components/AIAssistant';
-import { McpPanel } from './components/McpPanel';
-import { ArxivPanel } from './components/ArxivPanel';
-import { ProjectGraph } from './components/ProjectGraph';
-import { FontCoverage } from './components/FontCoverage';
-import { VersionReview } from './components/VersionReview';
-import { BackupPanel } from './components/BackupPanel';
 import { parseActions, defaultActions, type ProjectAction } from './lib/actions';
 import { parseCwl, parseMacros, type CwlCompletion } from './lib/cwl';
 import { setCustomCompletions as applyCustomCompletions } from './editor/completions';
 import { CollabPanel } from './components/CollabPanel';
-import { GitPanel } from './components/GitPanel';
 import { McpElicitation, type ElicitationPayload } from './components/McpElicitation';
-import { PackageManager } from './components/PackageManager';
-import { CommandStudio } from './components/CommandStudio';
-import { CompileTheater } from './components/CompileTheater';
-import { CrewPanel } from './components/CrewPanel';
-import { PaperStudio } from './components/PaperStudio';
-import { PluginMarket } from './components/PluginMarket';
-import { SchematicStudio, type SchematicMode } from './components/SchematicStudio';
-import { InkStudio } from './components/InkStudio';
-import { LayoutStudio, type LayoutResult } from './components/LayoutStudio';
-import { TikzStudio } from './components/TikzStudio';
+import type { SchematicMode } from './components/SchematicStudio';
+import type { LayoutResult } from './components/LayoutStudio';
 
-const SETTINGS_KEY = 'texpro.settings.v1';
-const RECENT_KEY = 'texpro.recent.v1';
 const PAGE_PARAMS = new URLSearchParams(window.location.search);
 const SMOKE = PAGE_PARAMS.get('smoke') === '1';
 const WELCOME_ONLY = PAGE_PARAMS.get('welcome') === '1';
-
-const defaultSettings: Settings = {
-  theme: 'paper',
-  language: getLanguage(),
-  fontSize: 17,
-  editorWidth: 760,
-  engine: 'pdflatex',
-  autoCompile: true,
-  compileMode: 'idle',
-  aiEnabled: false,
-  aiApiKey: '',
-  aiModel: 'gpt-4o-mini',
-  aiBaseUrl: 'https://api.openai.com/v1',
-  autoSave: true,
-  followCursor: true,
-  typewriter: false,
-  focus: false,
-  visual: true,
-  collapsePreamble: true,
-  showLineNumbers: true,
-  spellcheck: true,
-  smartPaste: true,
-  pdfZoom: 0.9,
-};
-
-function loadSettings(): Settings {
-  try {
-    const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-    delete stored.aiApiKey;
-    if (stored.theme === 'glass') stored.theme = 'paper';
-    return { ...defaultSettings, ...stored, aiApiKey: '' };
-  } catch {
-    return { ...defaultSettings, aiApiKey: '' };
-  }
-}
-
-function loadRecent(): RecentProject[] {
-  try {
-    const stored = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
-    return Array.isArray(stored) ? stored.filter((item) => item && typeof item.root === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function findFirstTex(nodes: Project['tree']): string | null {
-  for (const node of nodes) {
-    if (node.type === 'file' && /\.(tex|ltx)$/i.test(node.name)) return node.path;
-  }
-  for (const node of nodes) {
-    if (node.type === 'dir' && node.children) {
-      const found = findFirstTex(node.children);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-function flattenFiles(nodes: Project['tree']): Project['tree'] {
-  const result: Project['tree'] = [];
-  for (const node of nodes) {
-    if (node.type === 'file') result.push(node);
-    else if (node.children) result.push(...flattenFiles(node.children));
-  }
-  return result;
-}
-
-function isTextPath(path: string): boolean {
-  if (!/\.[^/]+$/.test(path)) return true;
-  return /\.(tex|ltx|bib|sty|cls|txt|md|json|ya?ml|csv|lua|def|clo|cfg)$/i.test(path);
-}
-
-function normalizeFile(path: string): string {
-  return path.replace(/\/\.\//g, '/');
-}
-
-function fileFromBuild(root: string, rootFile: string, buildDir = '.texpro/build'): string {
-  return `${root}/${buildDir.replace(/^\/+/, '')}/${stem(rootFile)}.pdf`;
-}
-
-async function reanchorComments(root: string, tree: Project['tree'], comments: ReviewComment[]): Promise<ReviewComment[]> {
-  const files = flattenFiles(tree);
-  const paths = new Set(files.map((file) => file.path));
-  const cache = new Map<string, string>();
-  const read = async (file: string) => {
-    if (!cache.has(file)) {
-      try { cache.set(file, await window.texpro.readFile(file)); } catch { cache.set(file, ''); }
-    }
-    return cache.get(file) || '';
-  };
-  const result: ReviewComment[] = [];
-  for (const comment of comments) {
-    let file = comment.file;
-    if (!paths.has(file)) {
-      const replacement = files.find((item) => item.name === basename(comment.file));
-      if (replacement) file = replacement.path;
-    }
-    if (!paths.has(file)) { result.push(comment); continue; }
-    const text = await read(file);
-    const needle = comment.snippet.trim();
-    let index = needle ? text.indexOf(needle) : -1;
-    if (index < 0 && needle.length > 20) index = text.indexOf(needle.slice(0, 20));
-    if (index >= 0) {
-      const line = text.slice(0, index).split('\n').length;
-      result.push({ ...comment, file, line });
-    } else {
-      result.push({ ...comment, file });
-    }
-  }
-  return result;
-}
 
 export default function App() {
   const { t, language } = useI18n();
@@ -304,7 +168,6 @@ export default function App() {
   const [previousPdfBytes, setPreviousPdfBytes] = useState<Uint8Array | null>(null);
   const pdfBytesRef = useRef<Uint8Array | null>(null);
   const [pdfPath, setPdfPath] = useState<string | null>(null);
-  const [pdfVersion, setPdfVersion] = useState(0);
   const [page, setPage] = useState(1);
   const [syncTarget, setSyncTarget] = useState<SyncTarget | null>(null);
 
@@ -316,10 +179,17 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [recent, setRecent] = useState<RecentProject[]>(loadRecent);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [gotoRequest, setGotoRequest] = useState<{ line: number; column?: number; key: number; flash?: boolean } | null>(null);
+  const [gotoRequest, setGotoRequest] = useState<SourceJump | null>(null);
+  const syncGeneration = useRef(0);
+  const inverseGeneration = useRef(0);
+  const navigationGeneration = useRef(0);
+  const syncPauseUntil = useRef(0);
   const [openingFile, setOpeningFile] = useState<string | null>(null);
 
   const projectRef = useRef<Project | null>(null);
+  const projectGeneration = useRef(0);
+  const closingProject = useRef(false);
+  const [closing, setClosing] = useState(false);
   const docsRef = useRef(docs);
   const activePathRef = useRef(activePath);
   const cursorRef = useRef(cursor);
@@ -464,6 +334,16 @@ export default function App() {
     [project],
   );
 
+  const resetBuildForMain = useCallback(() => {
+    projectGeneration.current++; syncGeneration.current++; inverseGeneration.current++;
+    pendingCompile.current = false;
+    if (compileRunId.current) void window.texpro.cancelCompile(compileRunId.current).catch(() => undefined);
+    compileRunId.current = null; compilingRef.current = false; setCompiling(false);
+    setCompileResult(null); setCompileLog(''); setDiagnostics([]); setBoxHotspots([]);
+    pdfPathRef.current = null; pdfBytesRef.current = null;
+    setPdfPath(null); setPdfBytes(null); setPreviousPdfBytes(null); setSyncTarget(null); setPage(1);
+  }, []);
+
   const refreshProjectData = useCallback(async () => {
     const currentProject = projectRef.current;
     if (!currentProject) return;
@@ -472,12 +352,15 @@ export default function App() {
         window.texpro.openProject(currentProject.root),
         window.texpro.projectSymbols(currentProject.root),
       ]);
-      setProject((current) => (current ? { ...current, tree: refreshed.tree, rootFile: refreshed.rootFile } : current));
+      if (projectRef.current?.root !== currentProject.root) return;
+      if (projectRef.current.rootFile !== refreshed.rootFile) resetBuildForMain();
+      projectRef.current = refreshed;
+      setProject(refreshed);
       setSymbols(nextSymbols);
     } catch {
       // keep the existing index
     }
-  }, []);
+  }, [resetBuildForMain]);
 
   const rememberProject = useCallback((next: Project) => {
     setRecent((current) => {
@@ -522,130 +405,6 @@ export default function App() {
     },
     [pushToast],
   );
-
-  const loadProject = useCallback(
-    async (next: Project) => {
-      projectRef.current = next;
-      setProject(next);
-      setDocs({});
-      docsRef.current = {};
-      setActivePath(null);
-      setPreviewFile(null);
-      setOutline([]);
-      setCompileResult(null);
-      setCompileLog('');
-      setDiagnostics([]);
-      setBoxHotspots([]);
-      setPdfBytes(null);
-      setPreviousPdfBytes(null);
-      setPdfPath(null);
-      pdfPathRef.current = null;
-      setSyncTarget(null);
-      setProblemsOpen(false);
-      setPage(1);
-      setGotoRequest(null);
-      setSymbols(emptySymbols);
-      setAssets([]);
-      autoCompileBase.current = '';
-      autoCompilePath.current = '';
-      demoCompileAttempted.current = false;
-      rememberProject(next);
-
-      let loadedConfig = defaultProjectConfig;
-      try {
-        const configPath = `${next.root}/.texpro/project.json`;
-        if (await window.texpro.fileExists(configPath)) {
-          const rawConfig = await window.texpro.readFile(configPath);
-          loadedConfig = normalizeProjectConfig(JSON.parse(rawConfig));
-        }
-      } catch {
-        // use defaults for projects without a config
-      }
-      projectConfigRef.current = loadedConfig;
-      setProjectConfig(loadedConfig);
-
-      window.texpro
-        .projectSymbols(next.root)
-        .then((found) => setSymbols(found))
-        .catch(() => undefined);
-      window.texpro
-        .listAssets(next.root)
-        .then((found) => setAssets(found))
-        .catch(() => setAssets([]));
-      setComments([]);
-      const commentsPath = `${next.root}/.texpro/comments.json`;
-      if (await window.texpro.fileExists(commentsPath)) {
-        void window.texpro
-          .readFile(commentsPath)
-          .then(async (raw) => {
-            const parsed = JSON.parse(raw) as ReviewComment[];
-            const anchored = await reanchorComments(next.root, next.tree, parsed);
-            setComments(anchored);
-            if (JSON.stringify(anchored) !== JSON.stringify(parsed)) {
-              await window.texpro.writeFile(commentsPath, JSON.stringify(anchored, null, 2));
-            }
-          })
-          .catch(() => undefined);
-      }
-
-      const target = next.rootFile || findFirstTex(next.tree);
-      if (!target) {
-        pushToast(tr('No .tex file found'), 'info', 'Create a file with \\documentclass to begin.');
-        return;
-      }
-      await openFile(target);
-
-      const cached = fileFromBuild(next.root, target, loadedConfig.directories.build);
-      try {
-        if (await window.texpro.fileExists(cached)) {
-          const bytes = await window.texpro.readPdf(cached);
-          setPdfBytes(bytes);
-          setPreviousPdfBytes(null);
-          setPdfPath(cached);
-          pdfPathRef.current = cached;
-          setPdfVersion((value) => value + 1);
-        }
-      } catch {
-        // a stale or unreadable build is not an error worth interrupting the user
-      }
-    },
-    [openFile, pushToast, rememberProject],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    async function boot() {
-      window.texpro
-        .listUserTemplates()
-        .then((templates) => {
-          if (!cancelled) setUserTemplates(templates);
-        })
-        .catch(() => undefined);
-      if (WELCOME_ONLY) return;
-      if (SMOKE) {
-        try {
-          const demo = await window.texpro.createDemoProject();
-          if (!cancelled) await loadProject(demo);
-        } catch (error) {
-          pushToast(tr('Demo project failed to open'), 'error', String(error));
-        }
-        return;
-      }
-      const latest = loadRecent()[0];
-      if (latest) {
-        try {
-          const next = await window.texpro.openProject(latest.root);
-          if (!cancelled) await loadProject(next);
-        } catch {
-          setRecent((current) => current.filter((item) => item.root !== latest.root));
-        }
-      }
-    }
-    boot();
-    return () => {
-      cancelled = true;
-    };
-  }, [loadProject, pushToast]);
 
   const saveDoc = useCallback(
     async (path: string, notify: boolean) => {
@@ -697,6 +456,147 @@ export default function App() {
     if (path) await saveDoc(path, true);
   }, [saveDoc]);
 
+
+  const loadProject = useCallback(
+    async (next: Project) => {
+      if (projectRef.current && !(await saveAll())) return;
+      const generation = ++projectGeneration.current;
+      pendingCompile.current = false;
+      if (compileRunId.current) await window.texpro.cancelCompile(compileRunId.current);
+      compileRunId.current = null;
+      compilingRef.current = false;
+      setCompiling(false);
+      syncGeneration.current++;
+      inverseGeneration.current++;
+      navigationGeneration.current++;
+      openRequest.current++;
+      activePathRef.current = null;
+      projectRef.current = next;
+      setProject(next);
+      setDocs({});
+      docsRef.current = {};
+      setActivePath(null);
+      setPreviewFile(null);
+      setOutline([]);
+      setCompileResult(null);
+      setCompileLog('');
+      setDiagnostics([]);
+      setBoxHotspots([]);
+      setPdfBytes(null);
+      setPreviousPdfBytes(null);
+      setPdfPath(null);
+      pdfPathRef.current = null;
+      setSyncTarget(null);
+      setProblemsOpen(false);
+      setPage(1);
+      setGotoRequest(null);
+      setSymbols(emptySymbols);
+      setAssets([]);
+      autoCompileBase.current = '';
+      autoCompilePath.current = '';
+      demoCompileAttempted.current = false;
+      rememberProject(next);
+
+      let loadedConfig = defaultProjectConfig;
+      try {
+        const configPath = `${next.root}/.texpro/project.json`;
+        if (await window.texpro.fileExists(configPath)) {
+          const rawConfig = await window.texpro.readFile(configPath);
+          loadedConfig = normalizeProjectConfig(JSON.parse(rawConfig));
+        }
+      } catch {
+        // use defaults for projects without a config
+      }
+      if (generation !== projectGeneration.current) return;
+      projectConfigRef.current = loadedConfig;
+      setProjectConfig(loadedConfig);
+
+      window.texpro
+        .projectSymbols(next.root)
+        .then((found) => { if (generation === projectGeneration.current) setSymbols(found); })
+        .catch(() => undefined);
+      window.texpro
+        .listAssets(next.root)
+        .then((found) => { if (generation === projectGeneration.current) setAssets(found); })
+        .catch(() => { if (generation === projectGeneration.current) setAssets([]); });
+      setComments([]);
+      const commentsPath = `${next.root}/.texpro/comments.json`;
+      if (await window.texpro.fileExists(commentsPath)) {
+        void window.texpro
+          .readFile(commentsPath)
+          .then(async (raw) => {
+            const parsed = JSON.parse(raw) as ReviewComment[];
+            const anchored = await reanchorComments(next.root, next.tree, parsed);
+            if (generation !== projectGeneration.current) return;
+            setComments(anchored);
+            if (JSON.stringify(anchored) !== JSON.stringify(parsed)) {
+              await window.texpro.writeFile(commentsPath, JSON.stringify(anchored, null, 2));
+            }
+          })
+          .catch(() => undefined);
+      }
+
+      if (generation !== projectGeneration.current) return;
+      const target = next.rootFile || findFirstTex(next.tree);
+      if (!target) {
+        pushToast(tr('No .tex file found'), 'info', 'Create a file with \\documentclass to begin.');
+        return;
+      }
+      await openFile(target);
+
+      if (!next.rootFile || generation !== projectGeneration.current) return;
+      const cached = fileFromBuild(next.root, next.rootFile, loadedConfig.directories.build);
+      try {
+        if (await window.texpro.fileExists(cached)) {
+          const bytes = await window.texpro.readPdf(cached);
+          if (generation !== projectGeneration.current) return;
+          setPdfBytes(bytes);
+          setPreviousPdfBytes(null);
+          setPdfPath(cached);
+          pdfPathRef.current = cached;
+        }
+      } catch {
+        // a stale or unreadable build is not an error worth interrupting the user
+      }
+    },
+    [openFile, pushToast, rememberProject, saveAll],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function boot() {
+      window.texpro
+        .listUserTemplates()
+        .then((templates) => {
+          if (!cancelled) setUserTemplates(templates);
+        })
+        .catch(() => undefined);
+      if (WELCOME_ONLY) return;
+      if (SMOKE) {
+        try {
+          const demo = await window.texpro.createDemoProject();
+          if (!cancelled) await loadProject(demo);
+        } catch (error) {
+          pushToast(tr('Demo project failed to open'), 'error', String(error));
+        }
+        return;
+      }
+      const latest = loadRecent()[0];
+      if (latest) {
+        try {
+          const next = await window.texpro.openProject(latest.root);
+          if (!cancelled) await loadProject(next);
+        } catch {
+          setRecent((current) => current.filter((item) => item.root !== latest.root));
+        }
+      }
+    }
+    boot();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadProject, pushToast]);
+
   useEffect(() => { applyCustomCompletions(customCompletions); }, [customCompletions]);
 
   useEffect(() => {
@@ -720,10 +620,12 @@ export default function App() {
       return;
     }
     let cancelled = false;
-    void window.texpro.gitStatus(project.root).then((status) => {
+    const check = () => { void window.texpro.gitStatus(project.root).then((status) => {
       if (!cancelled) setGitManaged(Boolean(status.initialized));
-    }).catch(() => { if (!cancelled) setGitManaged(false); });
-    return () => { cancelled = true; };
+    }).catch(() => { if (!cancelled) setGitManaged(false); }); };
+    check();
+    window.addEventListener('focus', check);
+    return () => { cancelled = true; window.removeEventListener('focus', check); };
   }, [project?.root]);
 
   useEffect(() => {
@@ -778,6 +680,7 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = window.texpro.onCompileOutput((output) => {
+      if (!compileRunId.current || output.runId !== compileRunId.current) return;
       if (output.stream === 'meta') {
         setCompileLog((current) => (current + '\n' + output.text).slice(-90000));
       } else {
@@ -794,7 +697,8 @@ export default function App() {
     }
     const currentProject = projectRef.current;
     const currentFile = activePathRef.current;
-    if (!currentProject || compilingRef.current) return;
+    if (!currentProject || compilingRef.current || closingProject.current) return;
+    const generation = projectGeneration.current;
     compilingRef.current = true;
     setCompiling(true);
     setStatus('Typesetting');
@@ -803,15 +707,29 @@ export default function App() {
     compileRunId.current = runId;
     try {
       const saved = await saveAll();
-      if (!saved) return;
+      if (!saved || generation !== projectGeneration.current) return;
+      const compileProject = await window.texpro.openProject(currentProject.root);
+      if (generation !== projectGeneration.current) return;
+      if (currentProject.rootFile !== compileProject.rootFile) {
+        pdfPathRef.current = null; pdfBytesRef.current = null; setPdfPath(null); setPdfBytes(null); setPreviousPdfBytes(null);
+        setSyncTarget(null); setCompileResult(null); setDiagnostics([]); setBoxHotspots([]);
+        syncGeneration.current++; inverseGeneration.current++;
+      }
+      projectRef.current = compileProject; setProject(compileProject);
+      if (!compileProject.rootFile) {
+        setSidebarOpen(true); setSidebarTab('files'); setStatus('Ready');
+        pushToast(tr('Choose main file'), 'error', compileProject.rootError || undefined);
+        return;
+      }
       const result = await window.texpro.compile({
         projectRoot: currentProject.root,
         activeFile: currentFile,
-        rootFile: currentProject.rootFile,
+        rootFile: compileProject.rootFile,
         engine: settingsRef.current.engine,
         runId,
         buildDir: projectConfigRef.current.directories.build,
       });
+      if (generation !== projectGeneration.current || compileRunId.current !== runId) return;
       setCompileResult(result);
       setDiagnostics(result.diagnostics || []);
       if (result.cancelled) {
@@ -819,11 +737,11 @@ export default function App() {
         pushToast(tr('Compilation cancelled'), 'info');
       } else if (result.ok && result.pdfPath) {
         const bytes = await window.texpro.readPdf(result.pdfPath);
+        if (generation !== projectGeneration.current || compileRunId.current !== runId) return;
         if (pdfBytesRef.current?.length) setPreviousPdfBytes(pdfBytesRef.current);
         setPdfBytes(bytes);
         setPdfPath(result.pdfPath);
         pdfPathRef.current = result.pdfPath;
-        setPdfVersion((value) => value + 1);
         setStatus(t('Compiled in {duration}', { duration: formatDuration(result.duration) }));
         pushToast(t('Compiled'), 'success', `${result.engine} · ${formatDuration(result.duration)}`);
       } else {
@@ -836,14 +754,45 @@ export default function App() {
         );
       }
     } catch (error) {
+      if (generation !== projectGeneration.current) return;
       setStatus('Compile failed');
       pushToast(tr('Compiler error'), 'error', String(error));
     } finally {
-      compilingRef.current = false;
-      compileRunId.current = null;
-      setCompiling(false);
+      if (compileRunId.current === runId) {
+        compilingRef.current = false;
+        compileRunId.current = null;
+        setCompiling(false);
+      }
     }
   }, [pushToast, saveAll]);
+
+  const handleCloseProject = useCallback(async () => {
+    if (!projectRef.current || closingProject.current) return;
+    closingProject.current = true; setClosing(true);
+    pendingCompile.current = false;
+    try {
+      if (!(await saveAll())) return;
+      if (compileRunId.current) await window.texpro.cancelCompile(compileRunId.current);
+      await window.texpro.stopCollab();
+      projectGeneration.current++; syncGeneration.current++; inverseGeneration.current++; navigationGeneration.current++; openRequest.current++;
+      compileRunId.current = null; compilingRef.current = false; setCompiling(false);
+      projectRef.current = null; setProject(null);
+      docsRef.current = {}; setDocs({}); activePathRef.current = null; setActivePath(null); setOpeningFile(null);
+      pdfPathRef.current = null; pdfBytesRef.current = null; setPdfPath(null); setPdfBytes(null); setPreviousPdfBytes(null);
+      setPreviewFile(null); setOutline([]); setSymbols(emptySymbols); setAssets([]); setComments([]); setGotoRequest(null);
+      setSyncTarget(null); setCompileResult(null); setCompileLog(''); setDiagnostics([]); setBoxHotspots([]); setPage(1);
+      setProblemsOpen(false); setPdfOpen(false); setStatus('Ready'); setCursor({line:1,column:1,selected:0});
+      projectConfigRef.current = defaultProjectConfig; setProjectConfig(defaultProjectConfig);
+      setCollabExtension(null); setCollabFile(null); setCollabOpen(false); setSchematicMode(null);
+      setTemplatesOpen(false); setWorkshopOpen(false); setImportOpen(false); setMcpOpen(false); setElicitation(null);
+      setProjectStudioOpen(false); setLayoutOpen(false); setTableRequest(null); setTikzOpen(false); setChartOpen(false);
+      setBibOpen(false); setDoctorOpen(false); setExportOpen(false); setCommentsOpen(false); setAiOpen(false);
+      setArxivOpen(false); setGraphOpen(false); setFontOpen(false); setVersionOpen(false); setBackupOpen(false);
+      setInkOpen(false); setGitOpen(false); setPackageOpen(false); setCommandOpen(false); setTheaterOpen(false);
+      setCrewOpen(false); setPaperOpen(false); setPluginOpen(false); setPaletteOpen(false); setZeroMode(false);
+    } catch (error) { pushToast(tr('Could not close project'), 'error', String(error)); }
+    finally { closingProject.current = false; setClosing(false); }
+  }, [saveAll, pushToast]);
 
   runCompileRef.current = runCompile;
 
@@ -864,6 +813,12 @@ export default function App() {
     }
   }, [pushToast]);
 
+  useEffect(() => {
+    syncGeneration.current++;
+    inverseGeneration.current++;
+    setSyncTarget(null);
+  }, [project?.root, activePath, pdfBytes]);
+
   const forwardSync = useCallback(
     async (line = cursorRef.current.line, column = cursorRef.current.column, quiet = true) => {
       const currentProject = projectRef.current;
@@ -873,6 +828,8 @@ export default function App() {
         if (!quiet) pushToast(tr('Compile first to enable SyncTeX'), 'info');
         return;
       }
+      if (quiet && Date.now() < syncPauseUntil.current) return;
+      const request = ++syncGeneration.current;
       try {
         const result = await window.texpro.syncForward({
           projectRoot: currentProject.root,
@@ -881,22 +838,25 @@ export default function App() {
           line,
           column: Math.max(0, column - 1),
         });
+        if (request !== syncGeneration.current || currentPdf !== pdfPathRef.current || texFile !== activePathRef.current) return;
         if (result.ok && result.page) {
-          setSyncTarget({
-            page: result.page,
+          setSyncTarget((previous) => quiet && previous?.sourceLine === line && previous.page === result.page ? previous : ({
+            page: result.page!,
             x: result.x || 0,
             y: result.y || 0,
             width: result.width,
             height: result.height,
+            bounds: result.bounds,
+            manual: !quiet,
             sourceLine: line,
             key: Date.now(),
-          });
+          }));
           if (!quiet) setPdfOpen(true);
         } else if (!quiet) {
           pushToast(tr('No SyncTeX result'), 'error', result.error);
         }
       } catch (error) {
-        if (!quiet) pushToast(tr('Forward search failed'), 'error', String(error));
+        if (!quiet && request === syncGeneration.current) pushToast(tr('Forward search failed'), 'error', String(error));
       }
     },
     [pushToast],
@@ -907,12 +867,12 @@ export default function App() {
   }, [forwardSync]);
 
   useEffect(() => {
-    if (!settings.followCursor || !pdfPath || !activePath || compiling) return;
+    if (!settings.followCursor || !pdfOpen || !pdfPath || !activePath || compiling) return;
     const timer = window.setTimeout(() => {
       void forwardSync(cursor.line, cursor.column, true);
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [cursor.line, cursor.column, settings.followCursor, pdfPath, activePath, compiling, forwardSync]);
+  }, [cursor.line, cursor.column, settings.followCursor, pdfOpen, pdfPath, activePath, compiling, forwardSync]);
 
   useEffect(() => {
     if (!settings.autoCompile || settings.compileMode === 'manual' || !activeDoc) return;
@@ -963,6 +923,7 @@ export default function App() {
               y: result.y || 0,
               width: result.width || 120,
               height: result.height || 12,
+              ...(result.bounds || {}),
               message: box.message,
               severity: box.box || (/^Underfull/.test(box.message) ? 'underfull' : 'overfull'),
             });
@@ -985,12 +946,12 @@ export default function App() {
   }, [project, pdfBytes, compiling, runCompile]);
 
   const gotoLocation = useCallback(
-    async (file: string | undefined, line: number, column?: number, flash = false) => {
+    async (file: string | undefined, line: number, column?: number, flash = false, endLine?: number, select = false) => {
+      const navigation = ++navigationGeneration.current;
       if (file && normalizeFile(file) !== normalizeFile(activePathRef.current || '')) {
-        await openFile(normalizeFile(file), line);
-      } else {
-        setGotoRequest({ line, column, key: Date.now(), flash });
+        await openFile(normalizeFile(file));
       }
+      if (navigation === navigationGeneration.current) setGotoRequest({ file: file ? normalizeFile(file) : undefined, line, column, endLine, select, key: navigation, flash });
     },
     [openFile],
   );
@@ -1007,25 +968,40 @@ export default function App() {
   );
 
   const handleInverse = useCallback(
-    async (pageNumber: number, x: number, y: number) => {
+    async (pageNumber: number, x: number, y: number, points?: { x: number; y: number }[]) => {
       const currentProject = projectRef.current;
       const currentPdf = pdfPathRef.current;
       if (!currentProject || !currentPdf) return;
+      const request = ++inverseGeneration.current;
+      syncGeneration.current++;
+      syncPauseUntil.current = Date.now() + 1800;
       try {
-        const result = await window.texpro.syncInverse({
+        const results = await Promise.all((points?.length ? points.slice(0, 7) : [{ x, y }]).map((point) => window.texpro.syncInverse({
           projectRoot: currentProject.root,
           pdfFile: currentPdf,
           page: pageNumber,
-          x,
-          y,
-        });
-        if (result.ok && result.file && result.line) {
-          await gotoLocation(result.file, result.line, result.column, true);
+          x: point.x,
+          y: point.y,
+        })));
+        if (request !== inverseGeneration.current || currentPdf !== pdfPathRef.current || currentProject.root !== projectRef.current?.root) return;
+        const valid = results.filter((result) => result.ok && result.file && result.line);
+        const groups = new Map<string, typeof valid>();
+        for (const result of valid) {
+          const file = normalizeFile(result.file!);
+          groups.set(file, [...(groups.get(file) || []), result]);
+        }
+        const match = [...groups.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+        if (match) {
+          const [file, locations] = match;
+          const lines = locations.map((result) => result.line!);
+          syncPauseUntil.current = Date.now() + 1800;
+          await gotoLocation(file, Math.min(...lines), locations[0].column, true, Math.max(...lines), true);
+          if (groups.size > 1) pushToast(tr('Region crosses source files. Showing the largest matching range.'), 'info');
         } else {
-          pushToast(tr('No source location at this point'), 'info', result.error);
+          pushToast(tr('No source location at this point'), 'info', results[0]?.error);
         }
       } catch (error) {
-        pushToast(tr('Inverse search failed'), 'error', String(error));
+        if (request === inverseGeneration.current) pushToast(tr('Inverse search failed'), 'error', String(error));
       }
     },
     [gotoLocation, pushToast],
@@ -1559,13 +1535,56 @@ export default function App() {
   const handleSaveProjectConfig = useCallback(async (config: ProjectConfig) => {
     const currentProject = projectRef.current;
     if (!currentProject) return;
-    projectConfigRef.current = config;
-    setProjectConfig(config);
-    await window.texpro.writeFile(
-      `${currentProject.root}/.texpro/project.json`,
-      JSON.stringify(config, null, 2),
-    );
+    const configPath = `${currentProject.root}/.texpro/project.json`;
+    const raw = await window.texpro.fileExists(configPath) ? JSON.parse(await window.texpro.readFile(configPath)) : {};
+    const next = { ...raw, ...config, ...(raw.rootFile ? { rootFile: raw.rootFile } : {}) };
+    await window.texpro.writeFile(configPath, JSON.stringify(next, null, 2));
+    if (projectRef.current?.root !== currentProject.root) return;
+    projectConfigRef.current = next;
+    setProjectConfig(next);
   }, []);
+
+  const handleSelectRoot = useCallback(async (file: string) => {
+    const current = projectRef.current;
+    if (!current || compilingRef.current || !file || !(current.rootCandidates || []).includes(file)) return;
+    if (!(await saveAll())) return;
+    try {
+      const configPath = `${current.root}/.texpro/project.json`;
+      const raw = await window.texpro.fileExists(configPath) ? JSON.parse(await window.texpro.readFile(configPath)) : {};
+      const config = { ...raw, rootFile: relativePath(current.root, file) };
+      await window.texpro.writeFile(configPath, JSON.stringify(config, null, 2));
+      const next = await window.texpro.openProject(current.root);
+      if (projectRef.current?.root !== current.root) return;
+      projectRef.current = next; setProject(next);
+      const normalized = normalizeProjectConfig(config);
+      projectConfigRef.current = normalized; setProjectConfig(normalized);
+      syncGeneration.current++; inverseGeneration.current++;
+      setSyncTarget(null); setPdfBytes(null); setPreviousPdfBytes(null);
+      pdfPathRef.current = null; setPdfPath(null); setCompileResult(null); setDiagnostics([]); setCompileLog('');
+      setBoxHotspots([]); setPage(1);
+      pushToast(tr('Main file saved'), 'success', config.rootFile);
+    } catch (error) { pushToast(tr('Could not set main file'), 'error', String(error)); }
+  }, [saveAll, pushToast]);
+
+  const openMainFile = useCallback(() => {
+    const main = projectRef.current?.rootFile;
+    if (main) void openFile(main);
+    else { setSidebarOpen(true); setSidebarTab('files'); }
+  }, [openFile]);
+
+  const editMainFile = useCallback(async (edit: (editor: EditorHandle) => void) => {
+    const current = projectRef.current;
+    if (!current?.rootFile) { pushToast(tr('Choose main file'), 'error'); return false; }
+    const generation = projectGeneration.current;
+    await openFile(current.rootFile);
+    for (let frame = 0; frame < 30; frame++) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      if (generation !== projectGeneration.current) return false;
+      if (editorRef.current?.getPath() === current.rootFile) { edit(editorRef.current); return true; }
+    }
+    pushToast(tr('Could not open file'), 'error', current.rootFile);
+    return false;
+  }, [openFile, pushToast]);
 
   const handleCreateModule = useCallback(
     async (title: string, file: string) => {
@@ -1577,7 +1596,9 @@ export default function App() {
       try {
         await window.texpro.writeFile(fullPath, `\\section{${escapeLatex(title)}}\n\n`);
         const refreshed = await window.texpro.openProject(currentProject.root);
-        setProject((current) => (current ? { ...current, tree: refreshed.tree, rootFile: refreshed.rootFile } : current));
+        if (projectRef.current?.root !== currentProject.root) return null;
+        projectRef.current = refreshed;
+        setProject(refreshed);
         pushToast(tr('Module created'), 'success', safeFile);
         return safeFile;
       } catch (error) {
@@ -1588,35 +1609,19 @@ export default function App() {
     [pushToast],
   );
 
-  const handleApplyProjectConfig = useCallback(
-    (config: ProjectConfig) => {
-      if (!activePathRef.current) {
-        pushToast(tr('Open a document first'), 'info');
-        return;
-      }
-      const modules = config.modules.filter((module) => module.included).map((module) => moduleInputPath(module.file));
-      editorRef.current?.applyModules(modules);
-      editorRef.current?.applyToc(config.toc);
+  const handleApplyProjectConfig = useCallback(async (config: ProjectConfig) => {
+    const modules = config.modules.filter(module => module.included).map(module => moduleInputPath(module.file));
+    if (await editMainFile(editor => { editor.applyModules(modules); editor.applyToc(config.toc); })) {
       pushToast(tr('Project structure applied'), 'success', `${modules.length} modules`);
-    },
-    [pushToast],
-  );
+    }
+  }, [editMainFile, pushToast]);
 
-  const handleApplyLayout = useCallback(
-    (layout: LayoutResult) => {
-      if (!activePathRef.current) {
-        pushToast(t('Open a document first'), 'info');
-        return;
-      }
-      editorRef.current?.applyLayout(layout);
-      setSettings((current) => ({
-        ...current,
-        engine: layout.engine,
-      }));
+  const handleApplyLayout = useCallback(async (layout: LayoutResult) => {
+    if (await editMainFile(editor => editor.applyLayout(layout))) {
+      setSettings(current => ({ ...current, engine: layout.engine }));
       pushToast(t('Layout applied'), 'success', `geometry · ${layout.engine}`);
-    },
-    [pushToast, t],
-  );
+    }
+  }, [editMainFile, pushToast, t]);
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     setSettings((current) => ({ ...current, ...patch }));
@@ -1729,6 +1734,7 @@ export default function App() {
   useEffect(() => {
     return window.texpro.onMenuAction((action) => {
       if (action === 'open-folder') void handleOpenFolder();
+      if (action === 'close-project') void handleCloseProject();
       if (action === 'save') void saveActive();
       if (action === 'compile') void runCompile();
       if (action === 'cancel-compile') void cancelCompile();
@@ -1746,6 +1752,7 @@ export default function App() {
     });
   }, [
     handleOpenFolder,
+    handleCloseProject,
     manualForwardSync,
     runCompile,
     saveActive,
@@ -1756,6 +1763,7 @@ export default function App() {
 
   const paletteActions: PaletteAction[] = useMemo(
     () => [
+      { id: 'close-project', label: t('Close project and return to Welcome'), group: 'File', icon: FolderOpen, run: () => void handleCloseProject() },
       {
         id: 'compile',
         label: t('Compile document'),
@@ -1930,7 +1938,7 @@ export default function App() {
         detail: 'Margins, columns, spacing, language and headers',
         group: 'Insert',
         icon: Columns3,
-        run: () => setLayoutOpen(true),
+        run: () => void editMainFile(() => setLayoutOpen(true)),
       },
       {
         id: 'search',
@@ -2043,6 +2051,8 @@ export default function App() {
     ],
     [
       project,
+      handleCloseProject,
+      editMainFile,
       settings.visual,
       settings.focus,
       settings.typewriter,
@@ -2068,6 +2078,7 @@ export default function App() {
 
   const moreActions: MoreAction[] = useMemo(
     () => [
+      { id: 'close-project', label: 'Close project and return to Welcome', group: 'File', icon: FolderOpen, run: () => void handleCloseProject() },
       { id: 'formula', label: 'Formula editor', group: 'Insert', icon: Sigma, run: openFormula },
       { id: 'import', label: 'Import Markdown / Typst', group: 'File', icon: FileInput, run: () => setImportOpen(true) },
       { id: 'equation', label: 'Insert display equation', group: 'Insert', icon: Sigma, run: () => insert(snippetLibrary.find((item) => item.id === 'equation')?.template || '') },
@@ -2083,8 +2094,8 @@ export default function App() {
       { id: 'collab', label: 'LAN collaboration', group: 'Tools', icon: Network, run: () => setCollabOpen(true) },
       { id: 'git', label: 'Version control', group: 'Tools', icon: GitBranch, run: () => setGitOpen(true) },
       { id: 'tikz', label: 'TikZ studio', group: 'Insert', icon: PenTool, run: () => { setTikzSource(null); setTikzOpen(true); } },
-      { id: 'layout', label: 'Page layout', group: 'Insert', icon: Columns3, run: () => setLayoutOpen(true) },
-      { id: 'packages', label: 'Packages & document class', group: 'Project', icon: Package, run: () => setPackageOpen(true) },
+      { id: 'layout', label: 'Page layout', group: 'Insert', icon: Columns3, run: () => void editMainFile(() => setLayoutOpen(true)) },
+      { id: 'packages', label: 'Packages & document class', group: 'Project', icon: Package, run: () => void editMainFile(() => setPackageOpen(true)) },
       { id: 'commands', label: 'Commands & completions', group: 'Project', icon: Terminal, run: () => setCommandOpen(true) },
       { id: 'compile-theater', label: 'Compile theater', group: 'Build', icon: Clapperboard, run: () => setTheaterOpen(true) },
       { id: 'zero-mode', label: 'Zero-interface mode', group: 'View', shortcut: '⌘⇧0', icon: Focus, run: () => setZeroMode(true) },
@@ -2100,7 +2111,7 @@ export default function App() {
       { id: 'doctor', label: 'Project doctor', group: 'Project', icon: Stethoscope, run: () => setDoctorOpen(true) },
       { id: 'convert-svgs', label: 'Convert SVG assets for LaTeX', group: 'Tools', icon: Image, run: () => { const current = projectRef.current; if (!current) return; void window.texpro.convertSvgReferences(current.root).then((result) => { pushToast(tr('SVG assets converted'), 'success', `${result.converted} images`); void refreshProjectData(); }).catch((error) => pushToast(tr('Could not convert SVG assets'), 'error', String(error))); } },
       { id: 'export', label: 'Export document', group: 'File', icon: Download, run: () => setExportOpen(true) },
-      { id: 'arxiv', label: 'arXiv package', group: 'File', icon: Package, run: () => setArxivOpen(true) },
+      { id: 'arxiv', label: 'arXiv package', group: 'File', icon: Package, run: () => { void saveAll().then(saved => { if (saved) setArxivOpen(true); }); } },
       { id: 'backup', label: 'Project backup', group: 'File', icon: CloudUpload, run: () => setBackupOpen(true) },
       { id: 'graph', label: 'Citation & label graph', group: 'Project', icon: Network, run: () => setGraphOpen(true) },
       { id: 'font', label: 'Font coverage', group: 'Project', icon: Type, run: () => setFontOpen(true) },
@@ -2117,7 +2128,7 @@ export default function App() {
       { id: 'settings', label: 'Settings', group: 'Tools', icon: Settings2, run: () => setSettingsOpen(true) },
       { id: 'palette', label: 'Command palette', group: 'Tools', shortcut: '⌘K', icon: Command, run: () => setPaletteOpen(true) },
     ],
-    [settings.visual, settings.focus, settings.typewriter, settings.theme, openFormula, insert, toggleVisual, toggleFocus, toggleTypewriter, toggleDayNight, handleOpenFolder, saveActive, runCompile, manualForwardSync, t],
+    [editMainFile, handleCloseProject, settings.visual, settings.focus, settings.typewriter, settings.theme, openFormula, insert, toggleVisual, toggleFocus, toggleTypewriter, toggleDayNight, handleOpenFolder, saveActive, runCompile, manualForwardSync, t],
   );
 
   moreActionsRef.current = moreActions;
@@ -2127,7 +2138,7 @@ export default function App() {
 
   return (
     <div className={`app ${settings.focus ? 'focus-mode' : ''} ${zeroMode ? 'zero-mode' : ''}`}>
-      {zeroMode && <button className="zero-exit" onClick={() => setZeroMode(false)} title="Exit zero-interface mode">Exit focus</button>}
+      {zeroMode && <button className="zero-exit" onClick={() => setZeroMode(false)} title={t('Exit zero-interface mode')}>{t('Exit focus')}</button>}
       <TitleBar
         project={project}
         doc={activeDoc || null}
@@ -2138,6 +2149,9 @@ export default function App() {
         sidebarOpen={sidebarOpen}
         pdfOpen={pdfOpen}
         moreActions={moreActions}
+        onCloseProject={() => void handleCloseProject()}
+        onOpenMain={openMainFile}
+        onOpenPalette={() => setPaletteOpen(true)}
         onCompile={() => void runCompile()}
         onCancel={() => void cancelCompile()}
         onToggleSidebar={() => setSidebarOpen((value) => !value)}
@@ -2157,10 +2171,12 @@ export default function App() {
           onPalette={() => setPaletteOpen(true)}
         />
       ) : (
-        <div className="workbench">
+        <div className="workbench" inert={closing} aria-busy={closing}>
           {sidebarOpen && (
             <Sidebar
               project={project}
+              compiling={compiling}
+              onSelectRoot={(file) => void handleSelectRoot(file)}
               activePath={activePath}
               tab={sidebarTab}
               outline={outline}
@@ -2256,7 +2272,6 @@ export default function App() {
 
           {pdfOpen && (
             <PdfPane
-              key={pdfVersion}
               bytes={pdfBytes}
               previousBytes={previousPdfBytes}
               pdfPath={pdfPath}
@@ -2265,7 +2280,7 @@ export default function App() {
               syncTarget={syncTarget}
               hotspots={boxHotspots}
               onCompile={() => void runCompile()}
-              onInverse={(pageNumber, x, y) => void handleInverse(pageNumber, x, y)}
+              onInverse={(pageNumber, x, y, points) => void handleInverse(pageNumber, x, y, points)}
               onOpenPdf={openPdf}
               onReveal={revealPdf}
               onPageChange={setPage}
@@ -2366,6 +2381,7 @@ export default function App() {
         open={commandOpen}
         projectRoot={project?.root || null}
         rootFile={project?.rootFile || null}
+        onBeforeRun={saveAll}
         actions={actions}
         customCompletions={customCompletions}
         onClose={() => setCommandOpen(false)}
@@ -2374,10 +2390,10 @@ export default function App() {
       />
       <PackageManager
         open={packageOpen}
-        documentText={activeDoc?.content || ''}
+        documentText={project?.rootFile ? docs[project.rootFile]?.content || '' : ''}
         onClose={() => setPackageOpen(false)}
         onApply={(text, engine) => {
-          editorRef.current?.replaceAll(text);
+          void editMainFile(editor => editor.replaceAll(text));
           if (engine) setSettings((current) => ({ ...current, engine }));
           setPackageOpen(false);
           pushToast(tr('Document setup applied'), 'success');
@@ -2610,7 +2626,7 @@ export default function App() {
       />
       <LayoutStudio
         open={layoutOpen}
-        documentText={activeDoc?.content || ''}
+        documentText={project?.rootFile ? docs[project.rootFile]?.content || '' : ''}
         onClose={() => setLayoutOpen(false)}
         onApply={handleApplyLayout}
       />

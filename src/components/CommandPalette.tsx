@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Search, CornerDownLeft } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useI18n } from '../i18n';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 
 export interface PaletteAction {
   id: string;
@@ -22,11 +23,13 @@ interface Props {
 }
 
 export function CommandPalette({ open, actions, onClose }: Props) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useDialogFocus(open, dialogRef, onClose);
 
   useEffect(() => {
     if (!open) return;
@@ -40,10 +43,10 @@ export function CommandPalette({ open, actions, onClose }: Props) {
     const needle = query.trim().toLowerCase();
     if (!needle) return actions;
     return actions.filter((action) => {
-      const text = [action.label, action.detail, action.group, action.keywords].filter(Boolean).join(' ').toLowerCase();
+      const text = [action.label, t(action.label), action.detail, action.group, t(action.group || ''), action.keywords].filter(Boolean).join(' ').toLowerCase();
       return needle.split(/\s+/).every((part) => text.includes(part));
     });
-  }, [actions, query]);
+  }, [actions, query, language]);
 
   useEffect(() => {
     setActive(0);
@@ -86,7 +89,7 @@ export function CommandPalette({ open, actions, onClose }: Props) {
 
   const palette = (
     <div className="palette-scrim" onMouseDown={onClose}>
-      <div className="palette" onMouseDown={(event) => event.stopPropagation()}>
+      <div ref={dialogRef} className="palette" role="dialog" aria-modal="true" aria-label={t('Command palette')} onMouseDown={(event) => event.stopPropagation()}>
         <div className="palette-input-row">
           <Search size={16} />
           <input
@@ -95,7 +98,7 @@ export function CommandPalette({ open, actions, onClose }: Props) {
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleKey}
             placeholder={t('Search actions, files, commands…')}
-            aria-label="Command palette"
+            aria-label={t('Command palette')}
           />
           <kbd>esc</kbd>
         </div>
@@ -115,7 +118,7 @@ export function CommandPalette({ open, actions, onClose }: Props) {
                 >
                   <span className="palette-icon"><Icon size={15} /></span>
                   <span className="palette-text">
-                    <strong>{action.label}</strong>
+                    <strong>{t(action.label)}</strong>
                     {action.detail && <small>{action.detail}</small>}
                   </span>
                   {action.shortcut && <kbd>{action.shortcut}</kbd>}

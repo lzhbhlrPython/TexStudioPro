@@ -18,7 +18,10 @@
     "nightly:version": "node scripts/set-nightly-version.mjs",
     "package:mac": "npm run build && electron-builder --mac --universal",
     "package:win": "npm run build && electron-builder --win nsis portable zip --x64",
-    "package:linux": "npm run build && electron-builder --linux AppImage deb rpm --x64"
+    "package:linux": "npm run build && electron-builder --linux AppImage deb rpm --x64",
+    "verify:release": "node scripts/verify-release.cjs",
+    "test:regression": "node --test tests/*.test.cjs",
+    "test:ui": "node scripts/test-ui.cjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
@@ -53,7 +56,8 @@
     "electron-builder": "^26.0.0",
     "typescript": "^5.9.0",
     "vite": "^8.3.4",
-    "wait-on": "^9.0.0"
+    "wait-on": "^9.0.0",
+    "@electron/asar": "3.4.1"
   },
   "build": {
     "appId": "dev.texpro.app",
@@ -66,13 +70,14 @@
     "files": [
       "dist/**",
       "electron/**",
-      "demo/**",
       "mcp/**",
+      "demo/**",
       "build/icon.*",
       "package.json",
       "!node_modules/@napi-rs/canvas/**",
       "!node_modules/@napi-rs/canvas-*/**",
-      "!**/node_modules/@napi-rs/canvas*/**"
+      "!**/node_modules/@napi-rs/canvas*/**",
+      "!**/.playwright-mcp/**"
     ],
     "mac": {
       "category": "public.app-category.productivity",
@@ -100,14 +105,21 @@
         "rpm"
       ]
     },
-    "extraResources": [
-      "mcp/**"
+    "asarUnpack": [
+      "mcp/**",
+      "electron/services/tex.cjs",
+      "electron/services/history.cjs",
+      "electron/services/git.cjs",
+      "electron/services/project-files.cjs",
+      "electron/services/project-root.cjs"
     ],
     "nsis": {
       "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}"
     },
     "portable": {
       "artifactName": "${productName}-${version}-windows-${arch}-portable.${ext}"
-    }
+    },
+    "beforePack": "scripts/before-pack.cjs",
+    "afterPack": "scripts/after-pack.cjs"
   }
 }

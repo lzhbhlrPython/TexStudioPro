@@ -9,3 +9,4 @@ artifacts/*.png
 .electron-cache/
 .texpro-userdata/
 .ai-notes/
+docs/superpowers/
