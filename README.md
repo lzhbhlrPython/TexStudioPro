@@ -278,6 +278,30 @@ TeXPro 不是 Markdown 编辑器，也不是把 PDF 截图贴到编辑器里的�
 
 ---
 
+## Nightly builds
+
+`.github/workflows/nightly.yml` builds and publishes a prerelease automatically:
+
+- Schedule: **03:17 UTC** daily (11:17 Asia/Shanghai), plus `workflow_dispatch`.
+- macOS: universal DMG + ZIP, unsigned.
+- Windows: NSIS installer + portable EXE + ZIP, x64.
+- Ubuntu: `.deb` + AppImage, x64.
+- CentOS / RHEL-compatible: `.rpm`, x64.
+- Published under the fixed **`nightly`** prerelease tag; asset names include the nightly version and platform.
+- The run first performs `npm run typecheck` and `npm run build`; packaging only starts if both pass.
+- Only `main` can publish the nightly release.
+
+Local equivalents:
+
+```bash
+node scripts/set-nightly-version.mjs
+npm run package:mac
+npm run package:win
+npm run package:linux
+```
+
+Artifacts are written to `release/`. Nightlies are intentionally unsigned; macOS Gatekeeper and Windows SmartScreen will warn on first launch.
+
 ## 快速开始
 
 ### MCP server

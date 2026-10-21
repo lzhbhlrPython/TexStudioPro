@@ -1817,6 +1817,39 @@ async function runProjectAction(projectRoot, action, rootFile) {
   });
 }
 
+
+async function scanCwlSources(projectRoot) {
+  const roots = [];
+  if (projectRoot) roots.push(path.join(projectRoot, '.texpro'));
+  const home = require('node:os').homedir();
+  if (process.platform === 'darwin') {
+    roots.push(path.join(home, 'Library', 'Application Support', 'texstudio', 'completion'));
+  } else if (process.platform === 'win32') {
+    roots.push(path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'texstudio', 'completion'));
+  } else {
+    roots.push(path.join(home, '.config', 'texstudio', 'completion'));
+  }
+  const files = [];
+  const visit = (dir, depth) => {
+    if (depth > 4 || files.length >= 80) return;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (files.length >= 80) break;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { visit(full, depth + 1); continue; }
+      if (!entry.name.toLowerCase().endsWith('.cwl')) continue;
+      try {
+        const stat = fs.statSync(full);
+        if (stat.size > 2_000_000) continue;
+        files.push({ path: full, name: entry.name, content: fs.readFileSync(full, 'utf8') });
+      } catch { /* ignore unreadable */ }
+    }
+  };
+  for (const root of roots) visit(root, 0);
+  return files;
+}
+
 function resolveTexBinary(name) {
   const candidates = [
     '/Library/TeX/texbin/' + name,
@@ -2258,6 +2291,7 @@ module.exports = {
   zoteroBibtex,
   checkTexAssets,
   runProjectAction,
+  scanCwlSources,
   collectProjectGraph,
   projectImpact,
   moveProjectFile,

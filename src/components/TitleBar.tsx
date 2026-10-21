@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  AlertCircle,
   Check,
   ChevronDown,
   FileText,
@@ -31,6 +32,7 @@ interface Props {
   onToggleSidebar: () => void;
   onTogglePdf: () => void;
   onOpenFolder: () => void;
+  onShowProblems: () => void;
 }
 
 export function TitleBar({
@@ -48,6 +50,7 @@ export function TitleBar({
   onToggleSidebar,
   onTogglePdf,
   onOpenFolder,
+  onShowProblems,
 }: Props) {
   const { t } = useI18n();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -56,13 +59,14 @@ export function TitleBar({
   return (
     <header className="titlebar minimal-titlebar">
       <div className="titlebar-left">
-        <button className="brand" onClick={onOpenFolder} title={t('Open project (⌘O)')}>
+        <button className="brand" onClick={onOpenFolder} title={t('Open project (⌘O)')} aria-label={t('Open project (⌘O)')}>
           <Logo size={22} />
         </button>
         <button
           className={`icon-btn ${sidebarOpen ? 'active' : ''}`}
           onClick={onToggleSidebar}
           title={t('Toggle sidebar')}
+          aria-label={t('Toggle sidebar')}
         >
           <PanelLeft size={15} />
         </button>
@@ -82,27 +86,35 @@ export function TitleBar({
       </div>
 
       <div className="titlebar-right">
-        <div className="compile-status" title={compileResult?.error || undefined}>
-          {compiling ? (
-            <>
-              <Loader2 size={11} className="spin" />
-              <span>{t('Typesetting')}</span>
-            </>
-          ) : compileResult ? (
-            <>
-              <Check size={11} className={compileResult.ok ? 'success-text' : 'danger-text'} />
-              <span>{compileResult.ok ? formatDuration(compileResult.duration) : t('Compile failed')}</span>
-            </>
-          ) : hasPdf ? (
-            <span className="muted">{t('PDF preview')}</span>
-          ) : null}
-        </div>
+        {compiling ? (
+          <div className="compile-status">
+            <Loader2 size={11} className="spin" />
+            <span>{t('Typesetting')}</span>
+          </div>
+        ) : compileResult && !compileResult.ok ? (
+          <button className="compile-status compile-status-error" onClick={onShowProblems} title={compileResult.error || undefined}>
+            <AlertCircle size={11} />
+            <span>{t('Compile failed')}{compileResult.errorCount ? ` · ${compileResult.errorCount}` : ''}</span>
+          </button>
+        ) : (
+          <div className="compile-status" title={compileResult?.error || undefined}>
+            {compileResult ? (
+              <>
+                <Check size={11} className="success-text" />
+                <span>{formatDuration(compileResult.duration)}</span>
+              </>
+            ) : hasPdf ? (
+              <span className="muted">{t('PDF preview')}</span>
+            ) : null}
+          </div>
+        )}
 
         <button
           data-testid="toggle-pdf"
           className={`icon-btn ${pdfOpen ? 'active' : ''}`}
           onClick={onTogglePdf}
           title={t('Toggle PDF preview')}
+          aria-label={t('Toggle PDF preview')}
         >
           <PanelRight size={15} />
         </button>
@@ -122,6 +134,7 @@ export function TitleBar({
           data-testid="more-menu"
           onClick={() => setMoreOpen((value) => !value)}
           title={t('More')}
+          aria-label={t('More')}
         >
           <MoreHorizontal size={16} />
         </button>

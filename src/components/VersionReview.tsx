@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Clock3, Eraser, GitCompare, History, RotateCcw, Trash2, X } from 'lucide-react';
+import { Check, Clock3, Eraser, GitBranch, GitCompare, History, RotateCcw, Trash2, X } from 'lucide-react';
 import { diffLines } from '../lib/lineDiff';
 import { basename, relativePath } from '../lib/latex';
 import { useI18n } from '../i18n';
@@ -19,9 +19,11 @@ interface Props {
   activeContent: string;
   onClose: () => void;
   onRestored: (file: string) => void;
+  gitManaged?: boolean;
+  onOpenGit?: () => void;
 }
 
-export function VersionReview({ open, projectRoot, activeFile, activeContent, onClose, onRestored }: Props) {
+export function VersionReview({ open, projectRoot, activeFile, activeContent, onClose, onRestored, gitManaged = false, onOpenGit }: Props) {
   const { t } = useI18n();
   const [versions, setVersions] = useState<Version[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -42,11 +44,11 @@ export function VersionReview({ open, projectRoot, activeFile, activeContent, on
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || gitManaged) return;
     setSelectedId('');
     setNotice('');
     void loadVersions();
-  }, [open, projectRoot]);
+  }, [open, projectRoot, gitManaged]);
 
   useEffect(() => {
     if (!open || !selected) return;
@@ -130,11 +132,19 @@ export function VersionReview({ open, projectRoot, activeFile, activeContent, on
             </div>
           </div>
           <div className="studio-header-actions">
-            <span className="studio-engine ok">{versions.length} {t('snapshots')}</span>
+            <span className="studio-engine ok">{gitManaged ? 'Git' : `${versions.length} ${t('snapshots')}`}</span>
             <button className="icon-btn" onClick={onClose}><X size={16} /></button>
           </div>
         </header>
 
+        {gitManaged ? (
+          <div className="version-git-only">
+            <span className="version-git-icon"><GitBranch size={28} /></span>
+            <strong>{t('Version history is managed by Git')}</strong>
+            <p>{t('TeXPro internal snapshots are disabled while this project has a Git repository. Use branches, commits and tags from the version control panel.')}</p>
+            <button className="primary-btn" onClick={onOpenGit}><GitBranch size={12} /> {t('Open version control')}</button>
+          </div>
+        ) : (
         <div className="version-body">
           <aside className="version-list">
             <button className="primary-btn version-snapshot" onClick={() => void snapshotNow()} disabled={busy}>
@@ -190,11 +200,12 @@ export function VersionReview({ open, projectRoot, activeFile, activeContent, on
             )}
           </div>
         </div>
+        )}
 
         <footer className="studio-footer">
           <span className="studio-hint">{t('Snapshots use content-addressed chunks; unchanged text is stored once.')}</span>
           <div className="spacer" />
-          <button className="danger-btn" onClick={() => void clearAll()} disabled={!versions.length}><Eraser size={12} /> {t('Clear history')}</button>
+          <button className="danger-btn" onClick={() => void clearAll()} disabled={!versions.length || gitManaged}><Eraser size={12} /> {t('Clear history')}</button>
           <button className="primary-btn" onClick={onClose}>{t('Done')}</button>
         </footer>
       </section>

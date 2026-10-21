@@ -160,7 +160,7 @@ export const editorTheme = EditorView.theme({
     alignItems: 'center',
     justifyContent: 'center',
     verticalAlign: '1px',
-    minWidth: '18px',
+    minWidth: '24px',
     height: '16px',
     marginRight: '7px',
     padding: '0 4px',
@@ -179,7 +179,7 @@ export const editorTheme = EditorView.theme({
   '.cm-section-badge-3, .cm-section-badge-4': {
     background: 'transparent',
     color: 'var(--text-faint)',
-    minWidth: '14px',
+    minWidth: '26px',
   },
   '.cm-list-line': {
     paddingLeft: '0',
@@ -263,7 +263,7 @@ export const editorTheme = EditorView.theme({
     right: '12px',
     top: '8px',
     fontFamily: 'var(--font-mono)',
-    fontSize: '10px',
+    fontSize: '10.5px',
     color: 'var(--text-faint)',
     background: 'var(--paper)',
     padding: '1px 6px',
@@ -387,7 +387,7 @@ export const editorTheme = EditorView.theme({
   },
   '.cm-preamble-text span': {
     fontFamily: 'var(--font-ui)',
-    fontSize: '10px',
+    fontSize: '10.5px',
     color: 'var(--text-faint)',
   },
   '.cm-preamble-action': {

@@ -8,6 +8,7 @@ import {
   BookOpen,
   Columns3,
   CircuitBoard,
+  Clapperboard,
   CloudUpload,
   Code2,
   Command,
@@ -17,6 +18,7 @@ import {
   FileImage,
   FileInput,
   FlaskConical,
+  Gavel,
   GitBranch,
   FolderOpen,
   Focus,
@@ -39,11 +41,13 @@ import {
   Save,
   Search,
   Settings2,
+  ShoppingBag,
   Sigma,
   Sparkles,
   Sun,
   Table2,
   Terminal,
+  Users,
   Type,
 } from 'lucide-react';
 import type {
@@ -105,6 +109,10 @@ import { GitPanel } from './components/GitPanel';
 import { McpElicitation, type ElicitationPayload } from './components/McpElicitation';
 import { PackageManager } from './components/PackageManager';
 import { CommandStudio } from './components/CommandStudio';
+import { CompileTheater } from './components/CompileTheater';
+import { CrewPanel } from './components/CrewPanel';
+import { PaperStudio } from './components/PaperStudio';
+import { PluginMarket } from './components/PluginMarket';
 import { SchematicStudio, type SchematicMode } from './components/SchematicStudio';
 import { InkStudio } from './components/InkStudio';
 import { LayoutStudio, type LayoutResult } from './components/LayoutStudio';
@@ -266,9 +274,17 @@ export default function App() {
   const [inkOpen, setInkOpen] = useState(false);
   const [collabOpen, setCollabOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
+  const [gitManaged, setGitManaged] = useState(false);
   const [elicitation, setElicitation] = useState<ElicitationPayload | null>(null);
+  const gitManagedRef = useRef(false);
+  gitManagedRef.current = gitManaged;
   const [packageOpen, setPackageOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [theaterOpen, setTheaterOpen] = useState(false);
+  const [zeroMode, setZeroMode] = useState(false);
+  const [crewOpen, setCrewOpen] = useState(false);
+  const [paperOpen, setPaperOpen] = useState(false);
+  const [pluginOpen, setPluginOpen] = useState(false);
   const [actions, setActions] = useState<ProjectAction[]>(defaultActions);
   const [customCompletions, setCustomCompletions] = useState<CwlCompletion[]>([]);
   const [tikzSource, setTikzSource] = useState<string | null>(null);
@@ -652,7 +668,7 @@ export default function App() {
         if (notify) {
           pushToast(tr('Saved'), 'success', path.split('/').pop());
           const currentProject = projectRef.current;
-          if (currentProject) void window.texpro.historyCommit(currentProject.root, 'save');
+          if (currentProject && !gitManagedRef.current) void window.texpro.historyCommit(currentProject.root, 'save');
         }
         return true;
       } catch (error) {
@@ -680,6 +696,25 @@ export default function App() {
   useEffect(() => { applyCustomCompletions(customCompletions); }, [customCompletions]);
 
   useEffect(() => {
+    if (!zeroMode) return;
+    const handler = (event: KeyboardEvent) => { if (event.key === 'Escape') setZeroMode(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [zeroMode]);
+
+  useEffect(() => {
+    if (!project) {
+      setGitManaged(false);
+      return;
+    }
+    let cancelled = false;
+    void window.texpro.gitStatus(project.root).then((status) => {
+      if (!cancelled) setGitManaged(Boolean(status.initialized));
+    }).catch(() => { if (!cancelled) setGitManaged(false); });
+    return () => { cancelled = true; };
+  }, [project?.root]);
+
+  useEffect(() => {
     if (!project) {
       applyCustomCompletions([]);
       setCustomCompletions([]);
@@ -696,9 +731,18 @@ export default function App() {
       readOptional(`${root}/.texpro/completions.cwl`),
       readOptional(`${root}/.texpro/macros.json`),
       readOptional(`${root}/.texpro/actions.json`),
-    ]).then(([cwl, macros, actionText]) => {
+      window.texpro.scanCwlSources(root).catch(() => []),
+    ]).then(([cwl, macros, actionText, scanned]) => {
       if (cancelled) return;
-      const items = [...parseCwl(cwl), ...parseMacros(macros)];
+      const cwlItems = [parseCwl(cwl), ...scanned.map((file) => parseCwl(file.content))].flat();
+      const seen = new Set<string>();
+      const uniqueCwl = cwlItems.filter((item) => {
+        const key = `${item.label}:${item.template}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      const items = [...uniqueCwl, ...parseMacros(macros)];
       setCustomCompletions(items);
       applyCustomCompletions(items);
       setActions(parseActions(actionText) || defaultActions);
@@ -1655,6 +1699,9 @@ export default function App() {
       } else if (key === 'l' && event.shiftKey) {
         event.preventDefault();
         toggleDayNight();
+      } else if (key === '0' && event.shiftKey) {
+        event.preventDefault();
+        setZeroMode((value) => !value);
       } else if (key === 'p' && event.altKey) {
         event.preventDefault();
         setPdfOpen((value) => !value);
@@ -2027,6 +2074,11 @@ export default function App() {
       { id: 'layout', label: 'Page layout', group: 'Insert', icon: Columns3, run: () => setLayoutOpen(true) },
       { id: 'packages', label: 'Packages & document class', group: 'Project', icon: Package, run: () => setPackageOpen(true) },
       { id: 'commands', label: 'Commands & completions', group: 'Project', icon: Terminal, run: () => setCommandOpen(true) },
+      { id: 'compile-theater', label: 'Compile theater', group: 'Build', icon: Clapperboard, run: () => setTheaterOpen(true) },
+      { id: 'zero-mode', label: 'Zero-interface mode', group: 'View', shortcut: '⌘⇧0', icon: Focus, run: () => setZeroMode(true) },
+      { id: 'crew', label: 'MCP crew', group: 'Tools', icon: Users, run: () => setCrewOpen(true) },
+      { id: 'paper-studio', label: 'Paper API & referee', group: 'Tools', icon: Gavel, run: () => setPaperOpen(true) },
+      { id: 'plugin-market', label: 'Plugin market', group: 'Tools', icon: ShoppingBag, run: () => setPluginOpen(true) },
       { id: 'bold', label: 'Bold', group: 'Format', shortcut: '⌘B', icon: Bold, run: () => editorRef.current?.wrapSelection('\\textbf{', '}') },
       { id: 'italic', label: 'Italic', group: 'Format', shortcut: '⌘I', icon: Italic, run: () => editorRef.current?.wrapSelection('\\textit{', '}') },
       { id: 'templates', label: 'Template library', group: 'File', icon: LayoutTemplate, run: () => setTemplatesOpen(true) },
@@ -2062,7 +2114,8 @@ export default function App() {
   const errors = activeDiagnostics.filter((item) => item.severity === 'error').length;
 
   return (
-    <div className={`app ${settings.focus ? 'focus-mode' : ''}`}>
+    <div className={`app ${settings.focus ? 'focus-mode' : ''} ${zeroMode ? 'zero-mode' : ''}`}>
+      {zeroMode && <button className="zero-exit" onClick={() => setZeroMode(false)} title="Exit zero-interface mode">Exit focus</button>}
       <TitleBar
         project={project}
         doc={activeDoc || null}
@@ -2078,6 +2131,7 @@ export default function App() {
         onToggleSidebar={() => setSidebarOpen((value) => !value)}
         onTogglePdf={() => setPdfOpen((value) => !value)}
         onOpenFolder={() => void handleOpenFolder()}
+        onShowProblems={() => setProblemsOpen(true)}
       />
 
       {!project ? (
@@ -2263,6 +2317,37 @@ export default function App() {
         onClose={() => setChartOpen(false)}
         onInsert={(code) => insertGenerated(code, true, t('Chart inserted'))}
       />
+      <PluginMarket
+        open={pluginOpen}
+        projectRoot={project?.root || null}
+        completions={customCompletions}
+        onClose={() => setPluginOpen(false)}
+        onCompletionsChange={setCustomCompletions}
+        onOpenMcp={() => { setPluginOpen(false); setMcpOpen(true); }}
+      />
+      <PaperStudio
+        open={paperOpen}
+        projectRoot={project?.root || null}
+        onClose={() => setPaperOpen(false)}
+        onJump={(file, line) => { setPaperOpen(false); void gotoLocation(file, line, 1, true); }}
+      />
+      <CrewPanel
+        open={crewOpen}
+        projectRoot={project?.root || null}
+        rootFile={project?.rootFile || null}
+        onClose={() => setCrewOpen(false)}
+        onOpenCompileTheater={() => { setCrewOpen(false); setTheaterOpen(true); }}
+      />
+      <CompileTheater
+        open={theaterOpen}
+        compileResult={compileResult}
+        compiling={compiling}
+        diagnostics={activeDiagnostics}
+        log={compileLog}
+        onClose={() => setTheaterOpen(false)}
+        onCompile={() => void runCompile()}
+        onJump={handleDiagnosticClick}
+      />
       <CommandStudio
         open={commandOpen}
         projectRoot={project?.root || null}
@@ -2296,6 +2381,7 @@ export default function App() {
         projectRoot={project?.root || null}
         onClose={() => setGitOpen(false)}
         onOpenProject={(path) => { void window.texpro.openProject(path).then((next) => loadProject(next)).catch((error) => pushToast(tr('Could not open project'), 'error', String(error))); }}
+        onGitChange={setGitManaged}
       />
       <CollabPanel
         open={collabOpen}
@@ -2341,6 +2427,8 @@ export default function App() {
         activeContent={activeDoc?.content || ''}
         onClose={() => setVersionOpen(false)}
         onRestored={(file) => { setVersionOpen(false); void openFile(file); }}
+        gitManaged={gitManaged}
+        onOpenGit={() => { setVersionOpen(false); setGitOpen(true); }}
       />
       <FontCoverage
         open={fontOpen}

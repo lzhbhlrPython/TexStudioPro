@@ -24,6 +24,7 @@ function startCollab(options = {}) {
   room = String(options.room || crypto.randomBytes(4).toString('hex'));
   const doc = new Y.Doc();
   const sockets = new Set();
+  const names = new Map();
   const wss = new WebSocketServer({ port, host: '0.0.0.0' });
   wss.on('connection', (socket, request) => {
     const url = new URL(request.url, `http://${request.headers.host}`);
@@ -32,8 +33,9 @@ function startCollab(options = {}) {
       return;
     }
     sockets.add(socket);
+    names.set(socket, 'Guest');
     socket.send(Y.encodeStateAsUpdate(doc));
-    broadcast(sockets, JSON.stringify({ type: 'presence', count: sockets.size }));
+    broadcast(sockets, JSON.stringify({ type: 'presence', count: sockets.size, names: [...names.values()] }));
     socket.on('message', (data, isBinary) => {
       if (isBinary) {
         Y.applyUpdate(doc, new Uint8Array(data));
@@ -42,12 +44,16 @@ function startCollab(options = {}) {
       }
       try {
         const message = JSON.parse(String(data));
-        if (message.type === 'presence') broadcast(sockets, JSON.stringify({ type: 'presence', count: sockets.size, name: message.name }));
+        if (message.type === 'presence') {
+          names.set(socket, String(message.name || 'Guest'));
+          broadcast(sockets, JSON.stringify({ type: 'presence', count: sockets.size, names: [...names.values()] }));
+        }
       } catch { /* ignore */ }
     });
     socket.on('close', () => {
       sockets.delete(socket);
-      broadcast(sockets, JSON.stringify({ type: 'presence', count: sockets.size }));
+      names.delete(socket);
+      broadcast(sockets, JSON.stringify({ type: 'presence', count: sockets.size, names: [...names.values()] }));
     });
   });
   server = wss;

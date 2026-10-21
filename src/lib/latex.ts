@@ -196,7 +196,7 @@ export function parseDocumentTitle(text: string): {
   return {
     title: readCommand('title'),
     author: readCommand('author'),
-    date: date || (/\\date\s*\{\s*\\today\s*\}/.test(text) ? 'Today' : ''),
+    date: date || (/\\date\s*\{\s*\\today\s*\}/.test(text) ? '\\today' : ''),
     documentClass: cls?.[1] || 'article',
     packages: (text.match(/\\usepackage(?:\[[^\]]*\])?\{/g) || []).length,
   };

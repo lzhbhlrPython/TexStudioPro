@@ -18,6 +18,8 @@ export function CollabPanel({ open, activeFile, content, onClose, onApply }: Pro
   const [roomUrl, setRoomUrl] = useState('');
   const [connected, setConnected] = useState(false);
   const [peers, setPeers] = useState(1);
+  const [names, setNames] = useState<string[]>([]);
+  const [name, setName] = useState(() => localStorage.getItem('texpro.collab.name') || 'Writer');
   const [text, setText] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,6 +40,12 @@ export function CollabPanel({ open, activeFile, content, onClose, onApply }: Pro
 
   useEffect(() => () => teardown(), []);
 
+  useEffect(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'presence', name }));
+    }
+  }, [name]);
+
   const close = () => { teardown(); void window.texpro.stopCollab(); onClose(); };
 
   const connect = async (target: string, seed: string) => {
@@ -57,14 +65,17 @@ export function CollabPanel({ open, activeFile, content, onClose, onApply }: Pro
       socket.onopen = () => {
         setConnected(true);
         socket.send(Y.encodeStateAsUpdate(doc));
-        socket.send(JSON.stringify({ type: 'presence', name: 'TeXPro' }));
+        socket.send(JSON.stringify({ type: 'presence', name }));
         setNotice(seed ? t('Session started. Share the link below.') : t('Connected to the shared session.'));
       };
       socket.onmessage = (event) => {
         if (typeof event.data === 'string') {
           try {
             const message = JSON.parse(event.data);
-            if (message.type === 'presence') setPeers(message.count || 1);
+            if (message.type === 'presence') {
+              setPeers(message.count || 1);
+              if (Array.isArray(message.names)) setNames(message.names);
+            }
           } catch { /* ignore */ }
           return;
         }
@@ -120,7 +131,7 @@ export function CollabPanel({ open, activeFile, content, onClose, onApply }: Pro
         <header className="studio-header">
           <div className="studio-heading">
             <div className="studio-icon"><Network size={18} /></div>
-            <div><span className="modal-eyebrow">{t('Collaboration')}</span><h2>{t('LAN collaboration')}</h2></div>
+            <div><span className="modal-eyebrow">{t('Collaboration')}</span><h2>{t('Writing room')}</h2></div>
           </div>
           <div className="studio-header-actions">
             <span className={`studio-engine ${connected ? 'ok' : ''}`}>{connected ? `${peers} ${t('online')}` : t('Offline')}</span>
@@ -130,6 +141,7 @@ export function CollabPanel({ open, activeFile, content, onClose, onApply }: Pro
         <div className="collab-body">
           <aside className="collab-side">
             <div className="pane-label"><Radio size={12} /> {t('Host a session')}</div>
+            <label className="workshop-field"><span>{t('Your name')}</span><input value={name} onChange={(event) => { setName(event.target.value); localStorage.setItem('texpro.collab.name', event.target.value); }} /></label>
             <p className="schematic-hint">{t('Only devices on the same local network can join. The session ends when you close this window.')}</p>
             <button className="primary-btn" onClick={() => void host()} disabled={busy || connected}>{t('Start hosting')}</button>
             {url && (
@@ -146,7 +158,7 @@ export function CollabPanel({ open, activeFile, content, onClose, onApply }: Pro
           <main className="collab-main">
             <div className="collab-main-head">
               <span>{activeFile ? activeFile.split('/').pop() : t('Shared draft')}</span>
-              <small>{t('Yjs CRDT · live text')}</small>
+              <div className="collab-people">{names.length ? names.map((person, index) => <span key={`${person}-${index}`} className={`collab-person tone-${index % 4}`}>{person}</span>) : <small>{t('Yjs CRDT · live text')}</small>}</div>
             </div>
             <textarea value={text} onChange={(event) => changeText(event.target.value)} placeholder={t('The shared document will appear here.')} spellCheck={false} />
             {notice && <div className="collab-notice">{notice}</div>}

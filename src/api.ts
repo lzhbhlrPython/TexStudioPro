@@ -33,6 +33,10 @@ export interface TexProApi {
   mcpRemoveConfig: (id: string) => Promise<Array<{ id: string; name: string; command: string; args: string[] }>>;
   onMcpElicitation: (callback: (payload: { id: number; request: { message?: string; requestedSchema?: { properties?: Record<string, { type?: string; title?: string; description?: string; enum?: string[]; default?: unknown }>; required?: string[] } } }) => void) => () => void;
   respondElicitation: (id: number, result: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }) => Promise<{ ok: boolean }>;
+  scanCwlSources: (root: string | null) => Promise<Array<{ path: string; name: string; content: string }>>;
+  startPaperApi: (root: string) => Promise<{ running: boolean; root: string; token: string; port: number; baseUrl: string }>;
+  stopPaperApi: () => Promise<{ ok: boolean }>;
+  paperApiStatus: () => Promise<{ running: boolean; root?: string; token?: string; port?: number; baseUrl?: string }>;
   runProjectAction: (root: string, action: { command: string; args: string[]; cwd?: string; env?: Record<string,string> }, rootFile: string) => Promise<{ ok: boolean; code: number | null; stdout: string; stderr: string; timedOut: boolean }>;
   checkTexAssets: (packages: string[], classes: string[]) => Promise<{ packages: Record<string, { installed: boolean; path: string }>; classes: Record<string, { installed: boolean; path: string }> }>;
   gitStatus: (root: string) => Promise<{ initialized: boolean; branch: string; changes: Array<{ status: string; file: string }>; ahead: number; behind: number; commits: Array<{ hash: string; subject: string }> }>;

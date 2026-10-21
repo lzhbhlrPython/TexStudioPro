@@ -50,9 +50,9 @@ const configs = {
       ['potentiometer', 'Potentiometer'], ['ground', 'Ground'],
     ],
     templates: [
-      { name: 'Series loop', nodes: [['battery', 80, 170, 'V'], ['resistor', 310, 170, 'R1'], ['resistor', 540, 170, 'R2']], edges: [[0, 1, 1], [1, 2, 1]] },
-      { name: 'RC circuit', nodes: [['vsource', 80, 170, 'V'], ['resistor', 320, 170, 'R'], ['capacitor', 560, 170, 'C']], edges: [[0, 1, 1], [1, 2, 1]] },
-      { name: 'Parallel pair', nodes: [['battery', 80, 180, 'V'], ['resistor', 330, 100, 'R1'], ['resistor', 330, 260, 'R2']], edges: [[0, 1, 1], [0, 2, 1]] },
+      { name: 'Series loop', nodes: [['battery', 80, 170, 'V'], ['resistor', 310, 170, 'R1'], ['resistor', 500, 170, 'R2']], edges: [[0, 1, 1], [1, 2, 1], [2, 0, 1]] },
+      { name: 'RC circuit', nodes: [['vsource', 80, 170, 'V'], ['resistor', 320, 170, 'R'], ['capacitor', 500, 170, 'C']], edges: [[0, 1, 1], [1, 2, 1], [2, 0, 1]] },
+      { name: 'Parallel pair', nodes: [['battery', 80, 180, 'V'], ['resistor', 330, 100, 'R1'], ['resistor', 330, 260, 'R2']], edges: [[0, 1, 1], [0, 2, 1], [1, 0, 1], [2, 0, 1]] },
     ] as Template[],
   },
   logic: {
@@ -63,8 +63,8 @@ const configs = {
       ['output', 'Output'],
     ],
     templates: [
-      { name: 'AND gate', nodes: [['input', 70, 110, 'A'], ['input', 70, 250, 'B'], ['and', 350, 180, 'AND'], ['output', 640, 180, 'Y']], edges: [[0, 2, 1], [1, 2, 1], [2, 3, 1]] },
-      { name: 'Half adder', nodes: [['input', 50, 80, 'A'], ['input', 50, 170, 'B'], ['xor', 300, 80, 'XOR'], ['and', 300, 220, 'AND'], ['output', 600, 80, 'S'], ['output', 600, 220, 'C']], edges: [[0, 2, 1], [1, 2, 1], [0, 3, 1], [1, 3, 1], [2, 4, 1], [3, 5, 1]] },
+      { name: 'AND gate', nodes: [['input', 70, 110, 'A'], ['input', 70, 250, 'B'], ['and', 350, 180, 'AND'], ['output', 560, 180, 'Y']], edges: [[0, 2, 1], [1, 2, 1], [2, 3, 1]] },
+      { name: 'Half adder', nodes: [['input', 50, 80, 'A'], ['input', 50, 170, 'B'], ['xor', 300, 80, 'XOR'], ['and', 300, 220, 'AND'], ['output', 520, 80, 'S'], ['output', 520, 220, 'C']], edges: [[0, 2, 1], [1, 2, 1], [0, 3, 1], [1, 3, 1], [2, 4, 1], [3, 5, 1]] },
     ] as Template[],
   },
   structure: {
@@ -74,8 +74,8 @@ const configs = {
       ['N', 'N'], ['NH2', 'NH₂'], ['H', 'H'], ['Cl', 'Cl'], ['Br', 'Br'], ['benzene', 'Benzene'],
     ],
     templates: [
-      { name: 'Ethanol', nodes: [['CH3', 100, 180, 'CH3'], ['CH2', 340, 180, 'CH2'], ['OH', 580, 180, 'OH']], edges: [[0, 1, 1], [1, 2, 1]] },
-      { name: 'Acetic acid', nodes: [['CH3', 80, 180, 'CH3'], ['C', 300, 180, 'C'], ['O', 520, 110, 'O'], ['OH', 520, 250, 'OH']], edges: [[0, 1, 1], [1, 2, 2], [1, 3, 1]] },
+      { name: 'Ethanol', nodes: [['CH3', 100, 180, 'CH3'], ['CH2', 340, 180, 'CH2'], ['OH', 500, 180, 'OH']], edges: [[0, 1, 1], [1, 2, 1]] },
+      { name: 'Acetic acid', nodes: [['CH3', 80, 180, 'CH3'], ['C', 300, 180, 'C'], ['O', 480, 110, 'O'], ['OH', 480, 250, 'OH']], edges: [[0, 1, 1], [1, 2, 2], [1, 3, 1]] },
     ] as Template[],
   },
 } as const;
@@ -261,7 +261,11 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
           const y1 = ((300 - from.y) / 40).toFixed(2);
           const x2 = (to.x / 40).toFixed(2);
           const y2 = ((300 - to.y) / 40).toFixed(2);
-          lines.push(`  \\draw (${x1},${y1}) -- (${x2},${y2});`);
+          if (to.x <= from.x) {
+              lines.push(`  \\draw (${x1},${y1}) -- (${x1},${((300 - (Math.max(from.y, to.y) + 86)) / 40).toFixed(2)}) -- (${x2},${((300 - (Math.max(from.y, to.y) + 86)) / 40).toFixed(2)}) -- (${x2},${y2});`);
+          } else {
+            lines.push(`  \\draw (${x1},${y1}) -- (${x2},${y2});`);
+          }
         }
       }
       lines.push('\\end{circuitikz}');
@@ -474,15 +478,24 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
                   const from = nodes.find((node) => node.id === edge.from);
                   const to = nodes.find((node) => node.id === edge.to);
                   if (!from || !to) return null;
-                  const x1 = from.x + 110;
-                  const y1 = from.y + 22;
+                  const fromWidth = from.kind === 'input' || from.kind === 'output' ? 76 : 110;
+                  const x1 = from.x + fromWidth;
+                  const y1 = from.y + 24;
                   const x2 = to.x;
-                  const y2 = to.y + 22;
+                  const incoming = edges.filter((item) => item.to === edge.to);
+                  const inputIndex = Math.max(0, incoming.findIndex((item) => item.id === edge.id));
+                  const isGate = mode === 'logic' && !['input', 'output'].includes(to.kind);
+                  const y2 = to.y + (isGate && to.kind !== 'not' && to.kind !== 'buffer' ? (inputIndex === 0 ? 14 : 34) : 24);
                   const mid = (x1 + x2) / 2;
+                  const path = mode === 'circuit' && to.x <= from.x
+                    ? `M ${x1} ${y1} L ${x1} ${Math.max(from.y, to.y) + 86} L ${x2} ${Math.max(from.y, to.y) + 86} L ${x2} ${y2}`
+                    : `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`;
                   return (
                     <g key={edge.id} className={selectedEdge === edge.id ? 'selected' : ''} onClick={() => { setSelectedEdge(edge.id); setSelectedNode(null); }}>
-                      <path className="wire-hit" d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`} />
-                      <path d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`} />
+                      <path className="wire-hit" d={path} />
+                      <path d={path} />
+                      <circle className="wire-end" cx={x1} cy={y1} r="2.5" />
+                      <circle className="wire-end" cx={x2} cy={y2} r="2.5" />
                     </g>
                   );
                 })}
@@ -490,12 +503,13 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
               {nodes.map((node) => (
                 <div
                   key={node.id}
-                  className={`schematic-node ${selectedNode === node.id ? 'selected' : ''} ${pending === node.id ? 'pending' : ''} kind-${node.kind}`}
+                  className={`schematic-node ${mode === 'logic' && !['input', 'output'].includes(node.kind) ? 'gate' : ''} ${mode === 'logic' && ['not', 'buffer'].includes(node.kind) ? 'gate-single' : ''} ${selectedNode === node.id ? 'selected' : ''} ${pending === node.id ? 'pending' : ''} kind-${node.kind}`}
                   style={{ left: node.x, top: node.y }}
                   onPointerDown={(event) => startDrag(event, node)}
                   onDoubleClick={() => connect(node.id)}
                 >
                   <span className="schematic-port left" onPointerDown={(event) => { event.stopPropagation(); connect(node.id); }} />
+                  {mode === 'logic' && !['input', 'output', 'not', 'buffer'].includes(node.kind) && <span className="schematic-port left in-two" onPointerDown={(event) => { event.stopPropagation(); connect(node.id); }} />}
                   <span className="schematic-node-icon"><NodeIcon kind={node.kind} /></span>
                   <span className="schematic-node-copy"><strong>{node.label}</strong><small>{node.kind}</small></span>
                   <span className="schematic-port right" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); connect(node.id); }} />

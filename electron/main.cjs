@@ -7,6 +7,7 @@ const { pathToFileURL } = require('node:url');
 const tex = require('./services/tex.cjs');
 const collab = require('./services/collab.cjs');
 const mcpClient = require('./services/mcp-client.cjs');
+const paperApi = require('./services/paper-api.cjs');
 const elicitationRequests = new Map();
 let elicitationSeq = 0;
 
@@ -526,6 +527,40 @@ function createWindow() {
           const completionsImage = await mainWindow.webContents.capturePage();
           fs.writeFileSync(path.join(artifacts, 'smoke-completions.png'), completionsImage.toPNG());
           await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="command-studio"] .studio-header .icon-btn')?.click()`);
+
+          for (const [action, testid, file] of [['compile-theater', 'compile-theater', 'smoke-theater'], ['crew', 'crew-panel', 'smoke-crew'], ['paper-studio', 'paper-studio', 'smoke-paper']]) {
+            await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="more-menu"]')?.click(); setTimeout(() => document.querySelector('[data-action="${action}"]')?.click(), 80);`);
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            const state = await mainWindow.webContents.executeJavaScript(`({ open: Boolean(document.querySelector('[data-testid="${testid}"]')) })`);
+            console.log('[smoke] ' + action, JSON.stringify(state));
+            const image = await mainWindow.webContents.capturePage();
+            fs.writeFileSync(path.join(artifacts, file + '.png'), image.toPNG());
+            await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="${testid}"] .studio-header .icon-btn')?.click()`);
+          }
+
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="more-menu"]')?.click(); setTimeout(() => document.querySelector('[data-action="crew"]')?.click(), 80);`);
+          await new Promise((resolve) => setTimeout(resolve, 350));
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('.crew-actions .primary-btn')?.click()`);
+          await new Promise((resolve) => setTimeout(resolve, 2800));
+          const crewRun = await mainWindow.webContents.executeJavaScript(`({ roles: document.querySelectorAll('.crew-status > div').length, failed: Boolean(document.querySelector('.crew-role.failed')) })`);
+          console.log('[smoke] crew-run', JSON.stringify(crewRun));
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="crew-panel"] .studio-header .icon-btn')?.click()`);
+
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="more-menu"]')?.click(); setTimeout(() => document.querySelector('[data-action="paper-studio"]')?.click(), 80);`);
+          await new Promise((resolve) => setTimeout(resolve, 350));
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('.referee-summary .primary-btn')?.click()`);
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+          const referee = await mainWindow.webContents.executeJavaScript(`({ issues: document.querySelectorAll('.referee-issue').length, report: Boolean(document.querySelector('.referee-summary .secondary-btn')) })`);
+          console.log('[smoke] referee', JSON.stringify(referee));
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="paper-studio"] .studio-header .icon-btn')?.click()`);
+
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="more-menu"]')?.click(); setTimeout(() => document.querySelector('[data-action="zero-mode"]')?.click(), 80);`);
+          await new Promise((resolve) => setTimeout(resolve, 350));
+          const zeroState = await mainWindow.webContents.executeJavaScript(`({ zero: document.querySelector('.app')?.classList.contains('zero-mode'), titlebar: Boolean(document.querySelector('.titlebar')?.offsetParent) })`);
+          console.log('[smoke] zero', JSON.stringify(zeroState));
+          const zeroImage = await mainWindow.webContents.capturePage();
+          fs.writeFileSync(path.join(artifacts, 'smoke-zero.png'), zeroImage.toPNG());
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('.zero-exit')?.click()`);
 
           await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="more-menu"]')?.click(); setTimeout(() => document.querySelector('[data-action="formula"]')?.click(), 80);`);
           await new Promise((resolve) => setTimeout(resolve, 450));
@@ -1156,6 +1191,15 @@ function registerIpc() {
   });
 
   ipcMain.handle('tex:check-assets', async (_event, packages, classes) => tex.checkTexAssets(packages || [], classes || []));
+  ipcMain.handle('paper-api:start', async (_event, root) => {
+    if (typeof root !== 'string' || !isAllowed(root)) throw new Error('Project is not open');
+    return paperApi.start(root);
+  });
+  ipcMain.handle('paper-api:stop', async () => paperApi.stop());
+  ipcMain.handle('paper-api:status', async () => paperApi.status());
+
+  ipcMain.handle('tex:scan-cwl', async (_event, root) => tex.scanCwlSources(root || null));
+
   ipcMain.handle('tex:run-action', async (_event, root, action, rootFile) => {
     if (typeof root !== 'string' || !isAllowed(root)) throw new Error('Project is not open');
     return tex.runProjectAction(root, action, rootFile);
@@ -1404,7 +1448,7 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('before-quit', () => mcpClient.disconnectAll());
+app.on('before-quit', () => { mcpClient.disconnectAll(); paperApi.stop(); });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin' || isSmoke) app.quit();

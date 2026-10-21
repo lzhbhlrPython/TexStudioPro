@@ -280,25 +280,25 @@ export function Sidebar({
     <aside className="sidebar" data-tree-menu={treeMenu ? treeMenu.node.name : ""}>
       <nav className="sidebar-rail" aria-label="Sidebar sections">
         <button className={tab === 'files' ? 'active' : ''} data-testid="tab-files"
-          onClick={() => onTabChange('files')} title={t('Project files')}>
+          onClick={() => onTabChange('files')} title={t('Project files')} aria-label={t('Project files')}>
           <Files size={17} />
         </button>
-        <button className={tab === 'outline' ? 'active' : ''} onClick={() => onTabChange('outline')} title={t('Outline')}>
+        <button className={tab === 'outline' ? 'active' : ''} onClick={() => onTabChange('outline')} title={t('Outline')} aria-label={t('Outline')}>
           <ListTree size={17} />
         </button>
         <button className={tab === 'assets' ? 'active' : ''} data-testid="tab-assets"
-          onClick={() => onTabChange('assets')} title={t('Asset library')}>
+          onClick={() => onTabChange('assets')} title={t('Asset library')} aria-label={t('Asset library')}>
           <FileImageIcon size={17} />
         </button>
         <button className={tab === 'symbols' ? 'active' : ''} data-testid="tab-symbols"
-          onClick={() => onTabChange('symbols')} title={t('Symbols')}>
+          onClick={() => onTabChange('symbols')} title={t('Symbols')} aria-label={t('Symbols')}>
           <Shapes size={17} />
         </button>
-        <button className={tab === 'search' ? 'active' : ''} onClick={() => onTabChange('search')} title={t('Search project')}>
+        <button className={tab === 'search' ? 'active' : ''} onClick={() => onTabChange('search')} title={t('Search project')} aria-label={t('Search project')}>
           <Search size={17} />
         </button>
         <div className="rail-spacer" />
-        <button onClick={onOpenFolder} title={t('Open another project')}>
+        <button onClick={onOpenFolder} title={t('Open another project')} aria-label={t('Open another project')}>
           <Plus size={17} />
         </button>
       </nav>
@@ -311,7 +311,7 @@ export function Sidebar({
               <div className="panel-heading-actions">
                 <button className="mini-btn" onClick={() => onCreateFile(project?.root || '')} title={t('New file')}><Plus size={11} /></button>
                 <button className="mini-btn" onClick={() => onCreateFolder(project?.root || '')} title={t('New folder')}><FolderPlus size={11} /></button>
-                <button className="mini-btn" onClick={onOpenFolder} title="Open folder">⌘O</button>
+                <button className="mini-btn" onClick={onOpenFolder} title={t('Open another project (⌘O)')} aria-label={t('Open another project (⌘O)')}><FolderOpen size={11} /></button>
               </div>
             </div>
             <div className="project-card">

@@ -14,7 +14,11 @@
     "test:compile": "node scripts/test-compile.mjs",
     "package": "npm run build && electron-builder --mac --dir",
     "test:import": "node scripts/test-import.mjs",
-    "test:mcp": "node scripts/test-mcp.mjs"
+    "test:mcp": "node scripts/test-mcp.mjs",
+    "nightly:version": "node scripts/set-nightly-version.mjs",
+    "package:mac": "npm run build && electron-builder --mac --universal",
+    "package:win": "npm run build && electron-builder --win nsis portable zip --x64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb rpm --x64"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
@@ -52,6 +56,11 @@
   "build": {
     "appId": "dev.texpro.app",
     "productName": "TeXPro",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
     "files": [
       "dist/**",
       "electron/**",
@@ -62,18 +71,38 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "target": "dir",
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "build/icon.icns"
     },
     "win": {
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "target": [
+        "nsis",
+        "portable",
+        "zip"
+      ]
     },
     "linux": {
       "icon": "build/icon.png",
-      "category": "Office"
+      "category": "Office",
+      "maintainer": "TeXPro <texpro@localhost>",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ]
     },
     "extraResources": [
       "mcp/**"
-    ]
+    ],
+    "nsis": {
+      "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-windows-${arch}-portable.${ext}"
+    }
   }
 }

@@ -23,12 +23,16 @@ export function CommandStudio({ open, projectRoot, rootFile, actions, customComp
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [macrosText, setMacrosText] = useState('');
+  const [scanned, setScanned] = useState<Array<{ name: string; path: string }>>([]);
+  const [scanning, setScanning] = useState(false);
   const cwlInput = useRef<HTMLInputElement | null>(null);
   const selected = actions.find((action) => action.id === selectedId) || actions[0];
 
   useEffect(() => {
     if (!open || !projectRoot) return;
     window.texpro.fileExists(`${projectRoot}/.texpro/macros.json`).then((exists) => exists ? window.texpro.readFile(`${projectRoot}/.texpro/macros.json`).then(setMacrosText) : setMacrosText('')).catch(() => setMacrosText(''));
+    setScanning(true);
+    window.texpro.scanCwlSources(projectRoot).then((files) => setScanned(files.map((file) => ({ name: file.name, path: file.path })))).catch(() => setScanned([])).finally(() => setScanning(false));
   }, [open, projectRoot]);
 
   if (!open) return null;
@@ -97,6 +101,27 @@ export function CommandStudio({ open, projectRoot, rootFile, actions, customComp
     setNotice(t('Macros saved'));
   };
 
+  const scanNow = async () => {
+    if (!projectRoot || scanning) return;
+    setScanning(true);
+    try {
+      const files = await window.texpro.scanCwlSources(projectRoot);
+      setScanned(files.map((file) => ({ name: file.name, path: file.path })));
+      const parsed = files.flatMap((file) => parseCwl(file.content));
+      const seen = new Set(customCompletions.map((item) => `${item.label}:${item.template}`));
+      const fresh = parsed.filter((item) => {
+        const key = `${item.label}:${item.template}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      onCompletionsChange([...customCompletions, ...fresh]);
+      setNotice(`${t('Loaded')} ${fresh.length} ${t('completions')}`);
+    } finally {
+      setScanning(false);
+    }
+  };
+
   return (
     <div className="modal-scrim" onMouseDown={onClose}>
       <section className="command-studio" data-testid="command-studio" onMouseDown={(event) => event.stopPropagation()}>
@@ -153,7 +178,8 @@ export function CommandStudio({ open, projectRoot, rootFile, actions, customComp
               <p className="schematic-hint">{t('Load a .cwl file to extend completion with your own commands and environments.')}</p>
               <input ref={cwlInput} type="file" accept=".cwl,.txt" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importCwl(file); event.target.value = ''; }} />
               <button className="secondary-btn" onClick={() => cwlInput.current?.click()} disabled={!projectRoot}><FileCode2 size={12} /> {t('Import .cwl')}</button>
-              <div className="completion-path">.texpro/completions.cwl</div>
+              <button className="secondary-btn" onClick={() => void scanNow()} disabled={!projectRoot || scanning}><RotateCcw size={12} /> {scanning ? t('Scanning…') : t('Scan TeXstudio')}</button>
+              <div className="completion-path">.texpro/completions.cwl · {scanned.length} {t('auto-detected .cwl sources')}</div>
               {customCompletions.some((item) => item.detail.startsWith('cwl')) ? (
                 <div className="completion-list">
                   {customCompletions.filter((item) => item.detail.startsWith('cwl')).slice(0, 16).map((item) => <code key={item.label}>{item.label}</code>)}

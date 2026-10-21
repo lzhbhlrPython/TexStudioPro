@@ -15,6 +15,7 @@ import {
   Loader2,
   Maximize2,
   Minus,
+  MoreHorizontal,
   PanelLeft,
   Presentation,
   Search,
@@ -369,7 +370,17 @@ export function PdfPane({
   const [previousDoc, setPreviousDoc] = useState<PDFDocumentProxy | null>(null);
   const [diffMode, setDiffMode] = useState(false);
   const [diffOpacity, setDiffOpacity] = useState(0.5);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const pdfPaneRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    const close = (event: MouseEvent) => {
+      if (!(event.target as Element | null)?.closest('.pdf-view-menu')) setViewMenuOpen(false);
+    };
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [viewMenuOpen]);
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -611,83 +622,79 @@ export function PdfPane({
           </span>
         </div>
         <div className="pdf-toolbar-actions">
-          <button className="icon-btn" onClick={() => goToPage(currentPage - 1)} title={t('Previous page')} disabled={currentPage <= 1}>
+          <button className="icon-btn" onClick={() => goToPage(currentPage - 1)} title={t('Previous page')} aria-label={t('Previous page')} disabled={currentPage <= 1}>
             <ChevronLeft size={14} />
           </button>
-          <button className="icon-btn" onClick={() => goToPage(currentPage + 1)} title={t('Next page')} disabled={currentPage >= pageCount}>
+          <button className="icon-btn" onClick={() => goToPage(currentPage + 1)} title={t('Next page')} aria-label={t('Next page')} disabled={currentPage >= pageCount}>
             <ChevronRight size={14} />
           </button>
           <span className="toolbar-sep" />
-          <button className="icon-btn" onClick={zoomOut} title={t('Zoom out')}>
+          <button className="icon-btn" onClick={zoomOut} title={t('Zoom out')} aria-label={t('Zoom out')}>
             <Minus size={14} />
           </button>
           <span className="zoom-label">{Math.round(zoom * 100)}%</span>
-          <button className="icon-btn" onClick={zoomIn} title={t('Zoom in')}>
+          <button className="icon-btn" onClick={zoomIn} title={t('Zoom in')} aria-label={t('Zoom in')}>
             <Plus size={14} />
           </button>
           <button
             className={`icon-btn ${fitMode ? 'active' : ''}`}
             onClick={() => setFitMode(true)}
-            title={t('Fit page width')}
+            title={t('Fit page width')} aria-label={t('Fit page width')}
           >
             <Maximize2 size={14} />
           </button>
           <span className="toolbar-sep" />
           <button
-            className={`icon-btn ${diffMode ? 'active' : ''}`}
-            data-testid="pdf-diff-toggle"
-            onClick={() => setDiffMode((value) => !value)}
-            disabled={!previousDoc}
-            title={t('Compare with previous compile')}
-          >
-            <GitCompare size={14} />
-          </button>
-          {diffMode && (
-            <input className="pdf-diff-opacity" type="range" min={0.15} max={0.9} step={0.05} value={diffOpacity} onChange={(event) => setDiffOpacity(Number(event.target.value))} title={t('Diff opacity')} />
-          )}
-          <button
-            className={`icon-btn ${spread ? 'active' : ''}`}
-            data-testid="pdf-spread-toggle"
-            onClick={() => setSpread((value) => !value)}
-            title={t('Two-page spread')}
-          >
-            <Columns2 size={14} />
-          </button>
-          <button
-            className="icon-btn"
-            data-testid="pdf-presentation"
-            onClick={() => {
-              if (document.fullscreenElement) void document.exitFullscreen();
-              else void pdfPaneRef.current?.requestFullscreen();
-            }}
-            title={t('Presentation mode')}
-          >
-            <Presentation size={14} />
-          </button>
-          <button className={`icon-btn ${showThumbs ? 'active' : ''}`} data-testid="pdf-thumb-toggle"
+            className={`icon-btn ${showThumbs ? 'active' : ''}`}
+            data-testid="pdf-thumb-toggle"
             onClick={() => setShowThumbs((value) => !value)}
-            title={t('Page thumbnails')}>
+            title={t('Page thumbnails')}
+            aria-label={t('Page thumbnails')}
+            aria-pressed={showThumbs}
+          >
             <PanelLeft size={14} />
           </button>
-          <button className={`icon-btn ${searchOpen ? 'active' : ''}`} data-testid="pdf-search-toggle"
+          <button
+            className={`icon-btn ${searchOpen ? 'active' : ''}`}
+            data-testid="pdf-search-toggle"
             onClick={() => setSearchOpen((value) => !value)}
-            title={t('Search in PDF')}>
+            title={t('Search in PDF')}
+            aria-label={t('Search in PDF')}
+            aria-pressed={searchOpen}
+          >
             <Search size={14} />
           </button>
-          <button className="icon-btn" data-testid="pdf-copy"
-            onClick={() => void copyPageText()}
-            title={t('Copy page text')}>
-            {copiedPage ? <span className="copy-done">✓</span> : <Copy size={14} />}
-          </button>
-          <button className="icon-btn" onClick={onOpenPdf} title={t('Open PDF in default viewer')} disabled={!pdfPath}>
-            <ExternalLink size={14} />
-          </button>
-          <button className="icon-btn" onClick={onReveal} title={t('Reveal PDF in Finder')} disabled={!pdfPath}>
-            <FolderOpen size={14} />
-          </button>
-          <button className="icon-btn" onClick={onCompile} title={t('Compile (⌘↩)')} disabled={compiling}>
-            <RefreshCw size={14} className={compiling ? 'spin' : ''} />
-          </button>
+          <span className="toolbar-sep" />
+          <div className="pdf-view-menu">
+            <button
+              className={`icon-btn ${viewMenuOpen ? 'active' : ''}`}
+              onClick={() => setViewMenuOpen((value) => !value)}
+              title={t('More PDF tools')}
+              aria-label={t('More PDF tools')}
+              aria-haspopup="menu"
+              aria-expanded={viewMenuOpen}
+            >
+              <MoreHorizontal size={14} />
+            </button>
+            {viewMenuOpen && (
+              <div className="pdf-view-popover" role="menu">
+                <button role="menuitemcheckbox" aria-checked={diffMode} onClick={() => setDiffMode((value) => !value)} disabled={!previousDoc}>
+                  <GitCompare size={13} /> {t('Compare with previous compile')}
+                </button>
+                {diffMode && <input className="pdf-diff-opacity" type="range" min={0.15} max={0.9} step={0.05} value={diffOpacity} onChange={(event) => setDiffOpacity(Number(event.target.value))} title={t('Diff opacity')} />}
+                <button role="menuitemcheckbox" aria-checked={spread} onClick={() => setSpread((value) => !value)}>
+                  <Columns2 size={13} /> {t('Two-page spread')}
+                </button>
+                <button role="menuitem" onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void pdfPaneRef.current?.requestFullscreen(); setViewMenuOpen(false); }}>
+                  <Presentation size={13} /> {t('Presentation mode')}
+                </button>
+                <span className="pdf-view-sep" />
+                <button role="menuitem" onClick={() => void copyPageText()}><Copy size={13} /> {t('Copy page text')}</button>
+                <button role="menuitem" onClick={onOpenPdf} disabled={!pdfPath}><ExternalLink size={13} /> {t('Open PDF in default viewer')}</button>
+                <button role="menuitem" onClick={onReveal} disabled={!pdfPath}><FolderOpen size={13} /> {t('Reveal PDF in Finder')}</button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       {searchOpen && (

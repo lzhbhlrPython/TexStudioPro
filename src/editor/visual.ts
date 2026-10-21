@@ -137,19 +137,21 @@ class DisplayMathWidget extends LatexWidget {
 class SectionBadgeWidget extends LatexWidget {
   constructor(
     readonly level: number,
+    readonly command: string,
     focusPos: number,
   ) {
     super(focusPos);
   }
 
   eq(other: SectionBadgeWidget) {
-    return other.level === this.level;
+    return other.level === this.level && other.command === this.command;
   }
 
   toDOM(view: EditorView) {
     const span = document.createElement('span');
     span.className = `cm-section-badge cm-section-badge-${this.level}`;
-    span.textContent = 'H' + this.level;
+    const labels: Record<string, string> = { part: '部分', chapter: '章', section: '节', subsection: '小节', subsubsection: '小小节', paragraph: '段' };
+    span.textContent = labels[this.command] || '节';
     this.bind(span, view);
     return span;
   }
@@ -357,7 +359,7 @@ class TitleWidget extends LatexWidget {
     h1.textContent = this.title || 'Untitled document';
     const meta = document.createElement('div');
     meta.className = 'cm-title-meta';
-    meta.textContent = [this.author, this.date].filter(Boolean).join('  ·  ');
+    meta.textContent = [this.author, this.date === '\\today' ? t('Resolved at compile time') : this.date].filter(Boolean).join('  ·  ');
     wrap.append(eyebrow, h1);
     if (meta.textContent) wrap.appendChild(meta);
     this.bind(wrap, view);
@@ -823,7 +825,7 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
     ranges.push(Decoration.line({ class: `cm-heading-line cm-heading-${level}` }).range(line.from));
     const open = line.from + match[0].length - 1;
     if (!overlaps(line.from, open + 1, occupied)) {
-      ranges.push(Decoration.replace({ widget: new SectionBadgeWidget(level, line.from + 1) }).range(line.from, open + 1));
+      ranges.push(Decoration.replace({ widget: new SectionBadgeWidget(level, match[2], line.from + 1) }).range(line.from, open + 1));
       occupied.push({ from: line.from, to: open + 1 });
     }
     const close = line.text.lastIndexOf('}');

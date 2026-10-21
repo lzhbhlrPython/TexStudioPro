@@ -1,0 +1,138 @@
+name: Nightly
+
+on:
+  schedule:
+    # 03:17 UTC — 11:17 Asia/Shanghai. Deliberately off the top of the hour.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Typecheck and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  macos:
+    name: macOS universal
+    needs: test
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/set-nightly-version.mjs
+      - name: Build DMG and ZIP
+        run: npx electron-builder --mac --universal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-macos
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/set-nightly-version.mjs
+      - name: Build installer, portable and zip
+        run: npx electron-builder --win nsis portable zip --x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-windows
+          path: |
+            release/*.exe
+            release/*.zip
+          if-no-files-found: error
+
+  linux:
+    name: Ubuntu and CentOS packages
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Linux packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fakeroot rpm libarchive-tools
+      - run: npm ci
+      - run: node scripts/set-nightly-version.mjs
+      - name: Build AppImage, deb and rpm
+        run: npx electron-builder --linux AppImage deb rpm --x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+          if-no-files-found: error
+
+  release:
+    name: Publish nightly prerelease
+    needs: [macos, windows, linux]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publish fixed nightly tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: TeXPro Nightly
+          prerelease: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          body: |
+            Automated nightly build of TeXPro.
+
+            - Commit: `${{ github.sha }}`
+            - Branch: `${{ github.ref_name }}`
+            - Run: #${{ github.run_number }}
+            - macOS: universal DMG/ZIP
+            - Windows: NSIS installer, portable EXE, ZIP
+            - Ubuntu: deb, AppImage
+            - CentOS/RHEL: rpm
+
+            These builds are unsigned and intended for testing.
+          files: release/**/*

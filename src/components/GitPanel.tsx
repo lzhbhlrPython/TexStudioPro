@@ -16,9 +16,10 @@ interface Props {
   projectRoot: string | null;
   onClose: () => void;
   onOpenProject: (path: string) => void;
+  onGitChange?: (managed: boolean) => void;
 }
 
-export function GitPanel({ open, projectRoot, onClose, onOpenProject }: Props) {
+export function GitPanel({ open, projectRoot, onClose, onOpenProject, onGitChange }: Props) {
   const { t } = useI18n();
   const [status, setStatus] = useState<GitStatus | null>(null);
   const changes = status?.changes || [];
@@ -31,7 +32,9 @@ export function GitPanel({ open, projectRoot, onClose, onOpenProject }: Props) {
   const load = async () => {
     if (!projectRoot) return;
     try {
-      setStatus(await window.texpro.gitStatus(projectRoot));
+      const next = await window.texpro.gitStatus(projectRoot);
+      setStatus(next);
+      onGitChange?.(next.initialized);
     } catch (error) {
       setNotice(String(error));
     }
