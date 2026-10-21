@@ -50,6 +50,7 @@ import {
   Users,
   Type,
 } from 'lucide-react';
+import type { Extension } from '@codemirror/state';
 import type {
   AssetItem,
   CompileResult,
@@ -273,6 +274,8 @@ export default function App() {
   const [schematicMode, setSchematicMode] = useState<SchematicMode | null>(null);
   const [inkOpen, setInkOpen] = useState(false);
   const [collabOpen, setCollabOpen] = useState(false);
+  const [collabExtension, setCollabExtension] = useState<Extension | null>(null);
+  const [collabFile, setCollabFile] = useState<string | null>(null);
   const [gitOpen, setGitOpen] = useState(false);
   const [gitManaged, setGitManaged] = useState(false);
   const [elicitation, setElicitation] = useState<ElicitationPayload | null>(null);
@@ -358,6 +361,7 @@ export default function App() {
 
   useEffect(() => {
     setLanguage(settings.language);
+    void window.texpro.setMenuLanguage(settings.language).catch(() => undefined);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...settings, aiApiKey: '' }));
     const root = document.documentElement;
     root.dataset.theme = settings.theme;
@@ -694,6 +698,14 @@ export default function App() {
   }, [saveDoc]);
 
   useEffect(() => { applyCustomCompletions(customCompletions); }, [customCompletions]);
+
+  useEffect(() => {
+    if (!collabExtension || !collabFile || !activePath) return;
+    if (collabFile !== activePath) {
+      setCollabExtension(null);
+      setCollabFile(null);
+    }
+  }, [activePath, collabExtension, collabFile]);
 
   useEffect(() => {
     if (!zeroMode) return;
@@ -2223,6 +2235,7 @@ export default function App() {
                   onDropFiles={(files) => void handleImageFiles(files)}
                   spellWords={spellWords}
                   gotoRequest={gotoRequest}
+                  collabExtension={collabExtension}
                 />
               ) : (
                 <div className="editor-loading">
@@ -2337,6 +2350,7 @@ export default function App() {
         rootFile={project?.rootFile || null}
         onClose={() => setCrewOpen(false)}
         onOpenCompileTheater={() => { setCrewOpen(false); setTheaterOpen(true); }}
+        onApplied={() => { const current = projectRef.current; if (current) { void refreshProjectData(); const path = activePathRef.current; if (path) void openFile(path); } }}
       />
       <CompileTheater
         open={theaterOpen}
@@ -2388,7 +2402,7 @@ export default function App() {
         activeFile={activePath}
         content={activeDoc?.content || ''}
         onClose={() => setCollabOpen(false)}
-        onApply={(text) => editorRef.current?.replaceAll(text)}
+        onSessionChange={(extension, file) => { setCollabExtension(extension); setCollabFile(file); }}
       />
       <InkStudio
         open={inkOpen}
@@ -2608,6 +2622,11 @@ export default function App() {
         onClose={() => setTikzOpen(false)}
         onInsert={(source) => insertGenerated(source, source.includes('\\begin{axis}'), t('Diagram inserted'))}
       />
+      {collabExtension && !collabOpen && (
+        <button className="collab-live-pill" onClick={() => setCollabOpen(true)} title={t('Open writing room')}>
+          <Users size={13} /> {t('Writing room live')}
+        </button>
+      )}
       <Toasts
         toasts={toasts}
         onDismiss={(id) => setToasts((current) => current.filter((item) => item.id !== id))}

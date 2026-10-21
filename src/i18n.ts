@@ -1436,6 +1436,57 @@ const zh: Record<string, string> = {
   'BibTeX library and citation search': 'BibTeX 书库与引用搜索',
   'Plugin sources are local; TeXPro never uploads your project.': '插件源全部在本地；TeXPro 不会上传项目。',
 
+  'Session started. The main editor is now shared.': '会话已开始，主编辑器已进入共享状态。',
+  'Connected. The main editor is now shared.': '已连接，主编辑器已进入共享状态。',
+  'Only devices on the same local network can join. The main editor becomes the shared document.': '只有同一局域网内的设备可以加入；主编辑器会成为共享文档。',
+  'The main editor is shared': '主编辑器已共享',
+  'Connect to start a writing room': '连接后开始写作房间',
+  'Type in the editor behind this panel. Cursors, selections and text sync through Yjs.': '在面板背后的编辑器中输入；光标、选区和文本通过 Yjs 同步。',
+  'Host a room or join a LAN link; the document stays in the main CodeMirror editor.': '发起房间或加入局域网链接；文档始终留在主 CodeMirror 编辑器中。',
+  'Live sync active': '实时同步中',
+  'Yjs merges concurrent edits. The file remains the document of record.': 'Yjs 自动合并并发编辑；文件仍是最终记录。',
+  'Leave room': '离开房间',
+  'Back to document': '回到文档',
+  'Writing room live': '写作房间进行中',
+  'Open writing room': '打开写作房间',
+  'Yjs CRDT · live cursors': 'Yjs CRDT · 实时光标',
+
+  'Approve': '批准',
+  'Reject': '拒绝',
+  'Rejected': '已拒绝',
+  'Human approval required': '需要人工复核',
+  'Insert an unreferenced figure': '插入未被引用的图',
+  'Commit current changes': '提交当前变更',
+  'Crew inspected the project and left it unchanged.': '剧组检查了项目，未直接修改。',
+  'Committed by approved crew action': '已由批准的剧组动作提交',
+  'Figure block inserted after approval': '批准后已插入图块',
+
+  'Interface language: English': '界面语言：English',
+  '界面语言：中文': 'Interface language: 中文',
+  'Paper API & referee': '论文 API 与审稿',
+
+  'Flowchart': '流程图',
+  'Function plot': '函数图',
+  'Geometry': '几何图',
+  'TeXPro': 'TeXPro',
+  'Git': 'Git',
+  'Zotero': 'Zotero',
+
+  'Custom': '自定义',
+  'HTML': 'HTML',
+  'Markdown': 'Markdown',
+  'Typst': 'Typst',
+
+  'Session ended because the active file changed.': '活动文件已切换，协作会话自动结束。',
+  'Autonomous build check…': '自主构建检查…',
+  'Build passed': '构建通过',
+  'Build needs attention': '构建需要处理',
+  'pages': '页',
+  'Re-checking the paper after approval…': '批准后重新检查论文…',
+  'issues remain': '个问题仍存在',
+  'Awaiting review': '等待复核',
+  'Round': '轮次',
+
 };
 
 const en: Record<string, string> = {

@@ -10104,3 +10104,59 @@ button:disabled {
 .plugin-status { padding: 3px 6px; border-radius: 999px; font-size: 8px; color: var(--text-faint); background: var(--panel); }
 .plugin-status.installed { color: var(--success); background: var(--success-soft); }
 .plugin-empty { min-height: 140px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: var(--text-faint); text-align: center; font-size: 9px; }
+
+.collab-editor-state { flex: 1; min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 20px; border: 1px dashed var(--border-strong); border-radius: 8px; background: var(--bg-deep); text-align: center; color: var(--text-faint); }
+.collab-editor-state strong { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.collab-editor-state span { max-width: 360px; font-size: 9.5px; line-height: 1.55; }
+.collab-live-badge { display: inline-flex; align-items: center; gap: 3px; margin-top: 4px; padding: 3px 7px; border-radius: 999px; color: var(--success); background: var(--success-soft); font-size: 8px; }
+.collab-live-badge span { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: collab-pulse 1.4s ease-in-out infinite; }
+.collab-live-badge span:nth-child(2) { animation-delay: 0.18s; }
+.collab-live-badge span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes collab-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+.collab-live-pill { position: fixed; right: 18px; bottom: 48px; z-index: 120; display: inline-flex; align-items: center; gap: 6px; height: 29px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--success) 35%, var(--border)); border-radius: 999px; background: var(--paper); color: var(--success); font-size: 9.5px; box-shadow: var(--shadow-md); }
+.collab-live-pill:hover { background: var(--success-soft); }
+.cm-ySelectionInfo { font-family: var(--font-ui); font-size: 9px; padding: 2px 5px; border-radius: 4px; color: white; }
+.cm-ySelectionCaret { border-left-width: 2px !important; }
+
+/* Writing room: a Shimo/Tencent-Docs-like dock instead of a modal. */
+.collab-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  background: transparent;
+  pointer-events: none;
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 0;
+}
+.collab-scrim .collab-studio {
+  pointer-events: auto;
+  width: min(420px, 100vw);
+  height: 100%;
+  border-radius: 0;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  box-shadow: -18px 0 48px rgba(30, 20, 12, 0.14);
+  animation: collab-dock-in 180ms var(--ease-out) both;
+}
+.collab-scrim .collab-body { grid-template-columns: 1fr; overflow: auto; }
+.collab-scrim .collab-side { border-right: none; border-bottom: 1px solid var(--border); }
+.collab-scrim .collab-main { min-height: 280px; }
+.collab-scrim .collab-main-head { margin-top: 2px; }
+.collab-scrim .studio-footer { flex-wrap: wrap; gap: 6px; }
+@keyframes collab-dock-in { from { transform: translateX(22px); opacity: 0.4; } to { transform: translateX(0); opacity: 1; } }
+
+.collab-person i { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-right: 3px; border-radius: 50%; background: color-mix(in srgb, currentColor 14%, transparent); font-style: normal; font-size: 7px; }
+
+.collab-scrim {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  animation: none !important;
+}
+
+.collab-scrim {
+  backdrop-filter: blur(0px) !important;
+}

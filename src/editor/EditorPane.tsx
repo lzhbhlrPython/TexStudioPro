@@ -81,6 +81,7 @@ interface Props {
   onDropFiles?: (files: File[]) => void;
   spellWords?: Set<string>;
   gotoRequest?: { line: number; column?: number; key: number; flash?: boolean } | null;
+  collabExtension?: Extension | null;
 }
 
 function insertText(view: EditorView, template: string) {
@@ -262,6 +263,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     focus: new Compartment(),
     typewriter: new Compartment(),
     lineNumbers: new Compartment(),
+    collab: new Compartment(),
   }).current;
   const completionSource = useRef(makeLatexCompletionSource(() => symbolsRef.current)).current;
   const lastCursorEmit = useRef(0);
@@ -400,6 +402,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
 
         flashField,
         latexHoverTooltip(() => symbolsRef.current.symbols),
+        compartments.collab.of(props.collabExtension || []),
         compartments.visual.of(
           props.settings.visual
             ? visualLatex({ get: () => visualRef.current })
@@ -530,6 +533,12 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     props.settings.showLineNumbers,
     props.settings.collapsePreamble,
   ]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: compartments.collab.reconfigure(props.collabExtension || []) });
+  }, [compartments, props.collabExtension]);
 
   useEffect(() => {
     const view = viewRef.current;

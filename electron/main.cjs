@@ -64,6 +64,41 @@ function sendMenu(action) {
   }
 }
 
+let menuLanguage = 'en';
+const zhMenu = {
+  File: '文件', Edit: '编辑', Insert: '插入', Project: '项目', Build: '构建', Navigate: '导航', View: '视图',
+  'Open Folder…': '打开文件夹…', Save: '保存',
+  'Import Markdown / Typst…': '导入 Markdown / Typst…', 'Export Document…': '导出文档…',
+  'Create arXiv Package…': '创建 arXiv 包…', 'Project Backup…': '项目备份…',
+  'Template Library…': '模板库…', 'Template Workshop…': '模板工坊…',
+  'Formula Editor…': '公式编辑器…', 'Display Equation': '独立公式', Table: '表格',
+  'Visual Table Editor…': '可视化表格…', Figure: '图片', 'Code Block': '代码块',
+  'Chart Studio…': '图表工作室…', 'Circuit Studio…': '电路工作室…',
+  'Logic Studio…': '逻辑门工作室…', 'Structure Studio…': '结构式工作室…',
+  'Ink Studio…': '手绘工作室…', 'TikZ Studio…': 'TikZ 工作室…', 'Page Layout…': '页面布局…',
+  'Packages & Document Class…': '宏包与文档类…', 'Commands & Completions…': '命令与补全…',
+  'Project Structure…': '项目结构…', 'Asset Library': '素材库', 'Bibliography…': '参考文献…',
+  'Citation & Label Graph…': '引用与标签图…', 'Font Coverage…': '字体覆盖…',
+  'Project Doctor…': '项目医生…', 'Version Review…': '版本审阅…',
+  'LAN Collaboration…': '局域网协作…', 'Version Control…': '版本控制…',
+  'Convert SVG Assets…': '转换 SVG 素材…', 'Comments…': '评论…', 'AI Assistant…': 'AI 助手…',
+  'MCP Server…': 'MCP 服务器…', Compile: '编译', 'Cancel Compile': '取消编译',
+  'Forward Search': '正向搜索', 'Command Palette…': '命令面板…', 'Toggle PDF Preview': '切换 PDF 预览',
+  'Toggle Sidebar': '切换侧栏', 'Toggle Visual Mode': '切换可视模式',
+  'Toggle Focus Mode': '切换专注模式', 'Typewriter Mode': '打字机模式',
+  'Toggle Day / Night': '切换日间 / 夜间', 'Compile Theater…': '编译剧场…',
+  'MCP Crew…': 'MCP 剧组…', 'Paper API…': '论文 API…', 'Plugin Market…': '插件市场…',
+};
+
+function localizeMenu(items) {
+  return items.map((item) => {
+    const next = { ...item };
+    if (menuLanguage === 'zh' && next.label && zhMenu[next.label]) next.label = zhMenu[next.label];
+    if (next.submenu) next.submenu = localizeMenu(next.submenu);
+    return next;
+  });
+}
+
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const tool = (label, id, accelerator) => ({
@@ -197,7 +232,7 @@ function buildMenu() {
     },
     { role: 'windowMenu' },
   ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  Menu.setApplicationMenu(Menu.buildFromTemplate(localizeMenu(template)));
 }
 
 
@@ -711,6 +746,12 @@ function createWindow() {
           console.log('[smoke] collab', JSON.stringify(collabState));
           const collabImage = await mainWindow.webContents.capturePage();
           fs.writeFileSync(path.join(artifacts, 'smoke-collab.png'), collabImage.toPNG());
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('.collab-side .primary-btn')?.click()`);
+          await new Promise((resolve) => setTimeout(resolve, 900));
+          const collabHost = await mainWindow.webContents.executeJavaScript(`({ connected: document.querySelector('.collab-studio .studio-engine')?.textContent, shared: Boolean(document.querySelector('.collab-editor-state')) })`);
+          console.log('[smoke] collab-host', JSON.stringify(collabHost));
+          await mainWindow.webContents.executeJavaScript(`document.querySelector('.collab-side .danger-btn')?.click()`);
+          await new Promise((resolve) => setTimeout(resolve, 250));
           await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="collab-panel"] .studio-header .icon-btn')?.click()`);
 
           await mainWindow.webContents.executeJavaScript(`document.querySelector('[data-testid="more-menu"]')?.click(); setTimeout(() => document.querySelector('[data-action="ink"]')?.click(), 80);`);
@@ -1191,6 +1232,12 @@ function registerIpc() {
   });
 
   ipcMain.handle('tex:check-assets', async (_event, packages, classes) => tex.checkTexAssets(packages || [], classes || []));
+  ipcMain.handle('menu:set-language', async (_event, language) => {
+    menuLanguage = language === 'zh' ? 'zh' : 'en';
+    buildMenu();
+    return { ok: true, language: menuLanguage };
+  });
+
   ipcMain.handle('paper-api:start', async (_event, root) => {
     if (typeof root !== 'string' || !isAllowed(root)) throw new Error('Project is not open');
     return paperApi.start(root);

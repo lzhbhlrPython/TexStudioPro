@@ -34,6 +34,7 @@ export interface TexProApi {
   onMcpElicitation: (callback: (payload: { id: number; request: { message?: string; requestedSchema?: { properties?: Record<string, { type?: string; title?: string; description?: string; enum?: string[]; default?: unknown }>; required?: string[] } } }) => void) => () => void;
   respondElicitation: (id: number, result: { action: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> }) => Promise<{ ok: boolean }>;
   scanCwlSources: (root: string | null) => Promise<Array<{ path: string; name: string; content: string }>>;
+  setMenuLanguage: (language: string) => Promise<{ ok: boolean; language: string }>;
   startPaperApi: (root: string) => Promise<{ running: boolean; root: string; token: string; port: number; baseUrl: string }>;
   stopPaperApi: () => Promise<{ ok: boolean }>;
   paperApiStatus: () => Promise<{ running: boolean; root?: string; token?: string; port?: number; baseUrl?: string }>;

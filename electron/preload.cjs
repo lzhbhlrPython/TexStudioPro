@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('texpro', {
   checkTexAssets: (packages, classes) => ipcRenderer.invoke('tex:check-assets', packages, classes),
   runProjectAction: (root, action, rootFile) => ipcRenderer.invoke('tex:run-action', root, action, rootFile),
   scanCwlSources: (root) => ipcRenderer.invoke('tex:scan-cwl', root),
+  setMenuLanguage: (language) => ipcRenderer.invoke('menu:set-language', language),
   startPaperApi: (root) => ipcRenderer.invoke('paper-api:start', root),
   stopPaperApi: () => ipcRenderer.invoke('paper-api:stop'),
   paperApiStatus: () => ipcRenderer.invoke('paper-api:status'),

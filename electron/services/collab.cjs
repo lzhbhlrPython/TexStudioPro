@@ -44,6 +44,10 @@ function startCollab(options = {}) {
       }
       try {
         const message = JSON.parse(String(data));
+        if (message.type === 'awareness') {
+          broadcast(sockets, JSON.stringify({ type: 'awareness', payload: message.payload }));
+          return;
+        }
         if (message.type === 'presence') {
           names.set(socket, String(message.name || 'Guest'));
           broadcast(sockets, JSON.stringify({ type: 'presence', count: sockets.size, names: [...names.values()] }));
