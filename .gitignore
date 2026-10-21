@@ -8,3 +8,4 @@ artifacts/*.png
 *.log
 .electron-cache/
 .texpro-userdata/
+.ai-notes/
