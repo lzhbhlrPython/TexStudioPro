@@ -35,6 +35,7 @@ jobs:
     timeout-minutes: 45
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,7 +45,7 @@ jobs:
       - run: npm ci
       - run: node scripts/set-nightly-version.mjs
       - name: Build DMG and ZIP
-        run: npx electron-builder --mac --universal
+        run: npx electron-builder --mac --universal --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: nightly-macos
@@ -58,6 +59,8 @@ jobs:
     needs: test
     runs-on: windows-latest
     timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -67,7 +70,7 @@ jobs:
       - run: npm ci
       - run: node scripts/set-nightly-version.mjs
       - name: Build installer, portable and zip
-        run: npx electron-builder --win nsis portable zip --x64
+        run: npx electron-builder --win nsis portable zip --x64 --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: nightly-windows
@@ -81,6 +84,8 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -95,7 +100,7 @@ jobs:
       - run: npm ci
       - run: node scripts/set-nightly-version.mjs
       - name: Build AppImage, deb and rpm
-        run: npx electron-builder --linux AppImage deb rpm --x64
+        run: npx electron-builder --linux AppImage deb rpm --x64 --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: nightly-linux

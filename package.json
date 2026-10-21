@@ -69,7 +69,10 @@
       "demo/**",
       "mcp/**",
       "build/icon.*",
-      "package.json"
+      "package.json",
+      "!node_modules/@napi-rs/canvas/**",
+      "!node_modules/@napi-rs/canvas-*/**",
+      "!**/node_modules/@napi-rs/canvas*/**"
     ],
     "mac": {
       "category": "public.app-category.productivity",
