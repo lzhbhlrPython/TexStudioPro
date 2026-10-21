@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+.texpro/
+.npm-cache/
+artifacts/*.png
+.DS_Store
+*.log
+.electron-cache/
+.texpro-userdata/

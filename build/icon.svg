@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="130" y1="80" x2="890" y2="960" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E1845F"/>
+      <stop offset="0.48" stop-color="#BC4F30"/>
+      <stop offset="1" stop-color="#7C2B18"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="180" y1="80" x2="760" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="26" stdDeviation="30" flood-color="#401008" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+  <rect x="44" y="44" width="936" height="936" rx="214" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="44" y="44" width="936" height="936" rx="214" fill="url(#shine)"/>
+  <rect x="58" y="58" width="908" height="908" rx="200" fill="none" stroke="#FFD9C6" stroke-opacity="0.18" stroke-width="3"/>
+  <path d="M252 324c0-35 28-63 63-63h394c35 0 63 28 63 63v7c0 35-28 63-63 63H315c-35 0-63-28-63-63v-7Z" fill="#FFF7EE"/>
+  <path d="M449 370c0-26 21-47 47-47h32c26 0 47 21 47 47v383c0 26-21 47-47 47h-32c-26 0-47-21-47-47V370Z" fill="#FFF7EE"/>
+  <path d="M636 555c22-22 57-22 79 0l101 101c22 22 22 57 0 79l-101 101c-22 22-57 22-79 0-22-22-22-57 0-79l61-61-61-61c-22-22-22-57 0-80Z" fill="#FFD4BE"/>
+  <circle cx="813" cy="238" r="24" fill="#FFD4BE" fill-opacity="0.9"/>
+</svg>
