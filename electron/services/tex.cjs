@@ -130,6 +130,16 @@ function collectProjectSymbols(root) {
   const environments = new Set();
   const packages = new Set();
   const images = [];
+  const references = [], bibliography = [], writingNotes = [];
+  const group = (text, at) => {
+    if (text[at] !== '{') return '';
+    let depth = 1, end = at + 1;
+    for (; end < text.length && depth; end++) {
+      if (text[end] === '\\') { end++; continue; }
+      if (text[end] === '{') depth++; else if (text[end] === '}') depth--;
+    }
+    return depth ? '' : text.slice(at + 1, end - 1);
+  };
   const visit = (dir, depth) => {
     if (depth > 5) return;
     let entries = [];
@@ -153,7 +163,23 @@ function collectProjectSymbols(root) {
         } catch {
           continue;
         }
-        for (const m of text.matchAll(/\\label\{([^}]+)\}/g)) labels.add(m[1]);
+        // Keep source locations and context so writing completion needs no separate manager.
+        const uncommented = text.replace(/(^|[^\\])%[^\n]*/gm, match => match.replace(/[^\n]/g, ' '));
+        for (const m of uncommented.matchAll(/\\label\{([^}]+)\}/g)) {
+          labels.add(m[1]);
+          const before = uncommented.slice(Math.max(0, m.index - 1800), m.index);
+          const heading = [...before.matchAll(/\\(?:caption|(?:sub)*section|chapter|part)\*?(?:\[[^\]]*\])?\s*\{/g)].at(-1);
+          const context = heading ? group(before, heading.index + heading[0].length - 1) : text.slice(Math.max(0, text.lastIndexOf('\n', m.index - 1) + 1), m.index);
+          references.push({ key: m[1], file: full, line: text.slice(0, m.index).split('\n').length, text: context.trim().slice(0, 300) });
+        }
+        let noteVerbatim = '';
+        text.split('\n').forEach((line, i) => {
+          if (noteVerbatim) { if (line.includes(`\\end{${noteVerbatim}}`)) noteVerbatim = ''; return; }
+          const begin = /^\s*\\begin\{(verbatim\*?|lstlisting|minted)\}/.exec(line);
+          if (begin) { noteVerbatim = begin[1]; return; }
+          const note = /^\s*%\s*(TODO|FIXME|NOTE|DONE)\s*:\s*(.*)$/i.exec(line);
+          if (note) writingNotes.push({ file: full, line: i + 1, text: note[2], done: note[1].toUpperCase() === 'DONE' });
+        });
         for (const m of text.matchAll(/\\begin\{([^}]+)\}/g)) environments.add(m[1]);
         for (const m of text.matchAll(/\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}/g)) citations.add(m[1]);
         for (const m of text.matchAll(/\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}/g)) {
@@ -176,7 +202,17 @@ function collectProjectSymbols(root) {
         } catch {
           continue;
         }
-        for (const m of text.matchAll(/@\w+\s*\{\s*([^,\s]+)\s*,/g)) citations.add(m[1]);
+        for (const m of text.matchAll(/@(?!comment\b|string\b|preamble\b)\w+\s*\{\s*([^,\s]+)\s*,/gi)) {
+          citations.add(m[1]);
+          const entry = group(text, m.index + m[0].indexOf('{'));
+          const field = name => {
+            const value = new RegExp('\\b' + name + '\\s*=\\s*([{"]|[^,\\s}]+)', 'i').exec(entry);
+            if (!value) return '';
+            const at = value.index + value[0].length - 1;
+            return value[1] === '{' ? group(entry, at) : value[1] === '"' ? entry.slice(at + 1).split('"')[0] : value[1];
+          };
+          bibliography.push({ key: m[1], file: full, line: text.slice(0, m.index).split('\n').length, title: field('title'), author: field('author'), year: field('year') });
+        }
       }
     }
   };
@@ -187,6 +223,7 @@ function collectProjectSymbols(root) {
     environments: [...environments].sort(),
     packages: [...packages].sort(),
     images,
+    references, bibliography, writingNotes,
   };
 }
 
@@ -278,14 +315,16 @@ async function runLatexOnce(engine, args, cwd, timeoutMs) {
   });
 }
 
-async function renderTikz({ projectRoot, filePath, source }) {
+async function renderTikz({ projectRoot, filePath, source, preamble: documentBuffer }) {
   const root = path.resolve(projectRoot || '');
   if (!fs.existsSync(root)) return { ok: false, error: 'Project is not open' };
   const cleanSource = String(source || '').trim();
   if (!cleanSource || cleanSource.length > 250000) return { ok: false, error: 'Empty or oversized TikZ source' };
   let documentText = '';
   try {
-    if (filePath && fs.existsSync(filePath)) documentText = fs.readFileSync(filePath, 'utf8');
+    const main = resolveProjectRoot(root).rootFile || filePath;
+    if (typeof documentBuffer === 'string' && documentBuffer.length <= 2000000) documentText = documentBuffer;
+    else if (main && fs.existsSync(main)) documentText = fs.readFileSync(main, 'utf8');
   } catch {
     // use empty preamble
   }

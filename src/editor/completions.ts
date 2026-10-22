@@ -1,7 +1,8 @@
 import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import type { EditorView } from '@codemirror/view';
 import type { ProjectSymbols } from '../types';
-import { basename, dirname, joinPath } from '../lib/latex';
+import { assetUrl, basename, dirname, joinPath, relativePath } from '../lib/latex';
+import { referenceInfo } from './referenceSupport';
 import type { CwlCompletion } from '../lib/cwl';
 
 interface CompletionData {
@@ -16,7 +17,7 @@ const environments = [
   'itemize', 'enumerate', 'description', 'figure', 'figure*', 'table', 'table*', 'tabular',
   'tabularx', 'longtable', 'center', 'flushleft', 'flushright', 'quote', 'quotation', 'verse',
   'theorem', 'lemma', 'proof', 'definition', 'corollary', 'verbatim', 'lstlisting', 'minted',
-  'tikzpicture', 'minipage', 'multicols', 'frame', 'block', 'columns',
+  'tikzpicture', 'circuitikz', 'axis', 'music', 'minipage', 'multicols', 'frame', 'block', 'columns',
 ];
 
 const documentClasses = ['article', 'report', 'book', 'letter', 'beamer', 'memoir', 'scrartcl', 'scrreprt', 'scrbook'];
@@ -26,7 +27,7 @@ const packages = [
   'longtable', 'array', 'multirow', 'multicol', 'xcolor', 'hyperref', 'cleveref', 'natbib',
   'biblatex', 'fontenc', 'inputenc', 'lmodern', 'microtype', 'enumitem', 'float', 'caption',
   'subcaption', 'titlesec', 'setspace', 'fancyhdr', 'listings', 'minted', 'tikz', 'pgfplots',
-  'siunitx', 'physics', 'bm', 'csquotes', 'polyglossia', 'fontspec', 'ctex', 'beamer', 'algorithm2e',
+  'siunitx', 'physics', 'bm', 'csquotes', 'polyglossia', 'fontspec', 'ctex', 'beamer', 'algorithm2e', 'circuitikz', 'chemfig', 'musixtex',
 ];
 
 let externalCommands: CwlCompletion[] = [];
@@ -36,6 +37,14 @@ export function setCustomCompletions(items: CwlCompletion[]) {
 }
 
 const commands: Array<{ label: string; detail: string; template?: string; boost?: number }> = [
+  { label: '\\chemfig', detail: 'chemical structure', template: '\\chemfig{|}' },
+  { label: '\\draw', detail: 'TikZ / circuit path', template: '\\draw |;' },
+  { label: '\\node', detail: 'TikZ node', template: '\\node at (0,0) {|};' },
+  { label: '\\addplot', detail: 'pgfplots function', template: '\\addplot {|};' },
+  { label: '\\Notes', detail: 'MusiXTeX note group', template: '\\Notes |\\en' },
+  { label: '\\qu', detail: 'MusiXTeX quarter note', template: '\\qu{|}' },
+  { label: '\\hu', detail: 'MusiXTeX half note', template: '\\hu{|}' },
+  { label: '\\en', detail: 'MusiXTeX end note group' },
   { label: '\\documentclass', detail: 'class', template: '\\documentclass{article}|' },
   { label: '\\usepackage', detail: 'package', template: '\\usepackage{amsmath}|' },
   { label: '\\begin', detail: 'environment', template: '\\begin{equation}|\n\n\\end{equation}' },
@@ -162,13 +171,16 @@ function commandCompletion(item: { label: string; detail: string; template?: str
   };
 }
 
-function closesWithBrace(label: string): Completion {
+function closesWithBrace(label: string, detail = '', info?: Completion['info']): Completion {
   return {
     label,
     type: 'variable',
+    detail,
+    info,
     apply: (view, _completion, from, to) => {
+      const suffix = view.state.sliceDoc(to, to + 1) === '}' ? '' : '}';
       view.dispatch({
-        changes: { from, to, insert: label + '}' },
+        changes: { from, to, insert: label + suffix },
         selection: { anchor: from + label.length + 1 },
       });
       view.focus();
@@ -196,15 +208,22 @@ function environmentCompletion(name: string): Completion {
   };
 }
 
-function imageCompletion(image: ProjectSymbols['images'][number]): Completion {
-  const rel = image.relative.replace(/\\/g, '/');
+function imageCompletion(image: ProjectSymbols['images'][number], filePath: string): Completion {
+  const rel = relativePath(dirname(filePath), image.path).replace(/\\/g, '/');
   return {
     label: basename(rel),
     detail: dirname(rel),
     type: 'text',
+    info: () => {
+      const dom = document.createElement('div'), img = document.createElement('img'), text = document.createElement('span');
+      dom.className = 'cm-reference-info'; img.src = assetUrl(image.path); img.alt = image.label; text.textContent = rel;
+      if (/\.(png|jpe?g|webp|gif|svg)$/i.test(image.path)) dom.appendChild(img);
+      dom.appendChild(text); return dom;
+    },
     apply: (view, _completion, from, to) => {
+      const suffix = view.state.sliceDoc(to, to + 1) === '}' ? '' : '}';
       view.dispatch({
-        changes: { from, to, insert: rel + '}' },
+        changes: { from, to, insert: rel + suffix },
         selection: { anchor: from + rel.length + 1 },
       });
       view.focus();
@@ -230,18 +249,25 @@ export function makeLatexCompletionSource(getData: () => CompletionData) {
     const ref = before.match(/\\(?:ref|eqref|pageref|autoref|cref|Cref)\{([^}]*)$/);
     if (ref) {
       return {
-        from: context.pos - ref[1].length,
-        options: data.symbols.labels.map(closesWithBrace),
-        validFor: /^[^}]*$/,
+        from: context.pos - ref[1].split(',').at(-1)!.trimStart().length,
+        options: data.symbols.labels.filter(key => !ref[1].split(',').slice(0, -1).map(s => s.trim()).includes(key)).map(key => {
+          const target = data.symbols.references?.find(item => item.key === key);
+          return closesWithBrace(key, target?.text || '', () => referenceInfo(key, data.symbols));
+        }),
+        validFor: /^[^},]*$/,
       };
     }
 
     const cite = before.match(/\\(?:cite|citep|citet|citeauthor|citeyear|parencite|textcite)\*?(?:\[[^\]]*\])*\{([^}]*)$/);
     if (cite) {
       return {
-        from: context.pos - cite[1].length,
-        options: data.symbols.citations.map(closesWithBrace),
-        validFor: /^[^}]*$/,
+        from: context.pos - cite[1].split(',').at(-1)!.trimStart().length,
+        options: data.symbols.citations.filter(key => !cite[1].split(',').slice(0, -1).map(s => s.trim()).includes(key)).map(key => {
+          const entry = data.symbols.bibliography?.find(item => item.key === key);
+          const result = closesWithBrace(key, entry ? `${entry.author} ${entry.year}`.trim() : '', () => referenceInfo(key, data.symbols, true));
+          return { ...result, label: entry?.title ? `${key} · ${entry.title}` : key };
+        }),
+        validFor: /^[^},]*$/,
       };
     }
 
@@ -270,7 +296,7 @@ export function makeLatexCompletionSource(getData: () => CompletionData) {
     if (graphic) {
       return {
         from: context.pos - graphic[1].length,
-        options: data.symbols.images.map(imageCompletion),
+        options: data.symbols.images.map(image => imageCompletion(image, data.filePath)),
         validFor: /^[^}]*$/,
       };
     }

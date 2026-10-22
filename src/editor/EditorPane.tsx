@@ -12,15 +12,21 @@ import {
   placeholder,
   rectangularSelection,
   crosshairCursor,
-  hoverTooltip,
   Decoration,
   type DecorationSet,
 } from '@codemirror/view';
-import { cursorLineDown, cursorLineUp, defaultKeymap, history, historyKeymap, indentWithTab, redo, selectLineDown, selectLineUp, undo } from '@codemirror/commands';
+import { cursorLineDown, cursorLineUp, defaultKeymap, history, historyKeymap, indentWithTab, isolateHistory, redo, selectLineDown, selectLineUp, undo } from '@codemirror/commands';
+import { moveWritingContent } from '../lib/writingStructure';
+import { writingReview, reviewWriting } from './writingReview';
+import { WritingReviewBar } from '../components/WritingReviewBar';
+import { writingFeedback, writingDiagnostics } from './writingFeedback';
+import { writingPosition, restoreWritingPosition, type WritingPosition, type WritingSessions } from './writingSession';
+import { toggleWritingNote, type WritingNote } from '../lib/writingNotes';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { Bold, Code2, Italic, Link2, Quote, Sigma } from 'lucide-react';
 import {
   autocompletion,
+  acceptCompletion,
   closeBrackets,
   completionStatus,
   closeBracketsKeymap,
@@ -38,20 +44,35 @@ import type { Diagnostic as CmDiagnostic } from '@codemirror/lint';
 import { latexLanguage } from './latexLanguage';
 import { makeLatexCompletionSource } from './completions';
 import { editorHighlighting, editorTheme } from './theme';
+import { writingReferenceHover } from './referenceSupport';
 import { completionAppearance, completionTheme } from './completionAppearance';
-import { focusMode, typewriterMode, visualLatex, type VisualContext } from './visual';
+import { composingWriting, leaveWritingBlock, stableWritingInput } from './writing';
+import { enterWritingTable } from './tableWidget';
+import { applyWriting, rememberWriting, restoreWriting, writingTargets, type WritingTarget } from './writingTargets';
+import { ensureTexPackages, texDocumentStart } from '../lib/texDocument';
+import { focusMode, typewriterMode, visualLatex, refreshWritingPreview, type VisualContext } from './visual';
 import type { CursorInfo, Diagnostic, ProjectSymbols, Settings, SourceJump } from '../types';
 import { dirname } from '../lib/latex';
 import { findSpellingIssues } from '../lib/spellcheck';
 import { smartPaste } from '../lib/pasteCleaner';
 
 export interface EditorHandle {
+  leaveNote: () => void;
+  toggleNote: (note: WritingNote) => boolean;
+  moveContent: (direction: -1 | 1) => boolean;
+  toggleReview: () => void;
+  getPosition: () => WritingPosition | null;
+  restorePosition: (point: WritingPosition) => void;
   getPath: () => string;
   getContent: () => string;
   gotoLine: (line: number, column?: number) => void;
   insert: (template: string) => void;
   insertLiteral: (text: string, range?: { from: number; to: number }) => void;
   getSelectionRange: () => { from: number; to: number };
+  captureWriting: (range?: { from: number; to: number }) => WritingTarget | null;
+  applyWriting: (target: WritingTarget, text: string, cursor?: number) => boolean;
+  restoreWriting: (target: WritingTarget) => void;
+  ensurePackages: (packages: string[]) => void;
   wrapSelection: (before: string, after: string) => void;
   getSelection: () => string;
   focus: () => void;
@@ -72,7 +93,11 @@ export interface EditorHandle {
 interface Props {
   path: string;
   value: string;
+  savedContent: string;
+  sessions: WritingSessions;
+  diagnosticsStale: boolean;
   root: string;
+  mainText?: string;
   settings: Settings;
   symbols: ProjectSymbols;
   diagnostics: Diagnostic[];
@@ -122,6 +147,14 @@ function wrapText(view: EditorView, before: string, after: string) {
   view.focus();
 }
 
+function moveContent(view: EditorView, direction: -1 | 1) {
+  if (view.composing) return false;
+  const change = moveWritingContent(view.state.doc.toString(), view.state.selection.main.head, direction);
+  if (!change) return false;
+  view.dispatch({ changes: { from: change.from, to: change.to, insert: change.insert }, selection: { anchor: change.anchor }, annotations: isolateHistory.of('full'), scrollIntoView: true });
+  view.focus(); return true;
+}
+
 function moveLogicalLine(view: EditorView, direction: 1 | -1, select: boolean): boolean {
   if (view.composing) return false;
   const status = completionStatus(view.state);
@@ -145,72 +178,6 @@ function moveLogicalLine(view: EditorView, direction: 1 | -1, select: boolean): 
     scrollIntoView: true,
   });
   return true;
-}
-
-function latexHoverTooltip(getSymbols: () => ProjectSymbols): Extension {
-  const pattern = /\\(ref|eqref|autoref|pageref|cite|citep|citet|parencite|textcite|includegraphics|usepackage)(?:\[[^\]]*\])?\{([^}]+)\}/g;
-  return hoverTooltip((view, position) => {
-    const line = view.state.doc.lineAt(position);
-    const relative = position - line.from;
-    for (const match of line.text.matchAll(pattern)) {
-      const start = match.index || 0;
-      const end = start + match[0].length;
-      if (relative < start || relative > end) continue;
-      const kind = match[1];
-      const value = match[2].trim();
-      return {
-        pos: line.from + start,
-        end: line.from + end,
-        above: true,
-        create() {
-          const dom = document.createElement('div');
-          dom.className = 'cm-hover-card';
-          const head = document.createElement('div');
-          head.className = 'cm-hover-card-head';
-          head.textContent = kind.startsWith('cite') ? 'Citation' : kind === 'includegraphics' ? 'Image' : kind === 'usepackage' ? 'Package' : 'Reference';
-          const key = document.createElement('strong');
-          key.textContent = value;
-          dom.append(head, key);
-          if (kind.startsWith('cite')) {
-            const found = [...view.state.doc.toString().matchAll(new RegExp('@\\w+\\{\\s*' + value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*,', 'g'))];
-            const hint = document.createElement('span');
-            hint.textContent = found.length ? 'BibTeX entry in this project' : 'Citation key';
-            dom.append(hint);
-          } else if (kind === 'includegraphics') {
-            const image = getSymbols().images.find((item) => item.relative === value || item.label === value);
-            const hint = document.createElement('span');
-            hint.textContent = image ? image.path : 'Image path';
-            dom.append(hint);
-          } else if (kind === 'usepackage') {
-            const hint = document.createElement('span');
-            hint.textContent = getSymbols().packages.includes(value) ? 'Package used in project' : 'LaTeX package';
-            dom.append(hint);
-          } else {
-            const labelPattern = new RegExp('\\\\label\\{' + value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\}');
-            const matchLabel = [...view.state.doc.toString().matchAll(new RegExp(labelPattern.source, 'g'))][0];
-            if (matchLabel && matchLabel.index !== undefined) {
-              const target = view.state.doc.lineAt(matchLabel.index);
-              const snippet = document.createElement('span');
-              snippet.textContent = `L${target.number}: ${target.text.trim().slice(0, 70)}`;
-              dom.append(snippet);
-              dom.classList.add('clickable');
-              dom.addEventListener('mousedown', (event) => {
-                event.preventDefault();
-                view.dispatch({ selection: { anchor: matchLabel.index + 1 }, scrollIntoView: true });
-                view.focus();
-              });
-            } else {
-              const hint = document.createElement('span');
-              hint.textContent = 'No matching \\label in this file';
-              dom.append(hint);
-            }
-          }
-          return { dom };
-        },
-      };
-    }
-    return null;
-  });
 }
 
 const flashEffect = StateEffect.define<number>();
@@ -240,15 +207,18 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
   const viewRef = useRef<EditorView | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
+  const mainPreamble = props.mainText?.slice(0, texDocumentStart(props.mainText)?.to ?? props.mainText.length);
   const visualRef = useRef<VisualContext>({
     filePath: props.path,
     projectRoot: props.root,
     collapsePreamble: props.settings.collapsePreamble,
+    preamble: mainPreamble,
   });
   visualRef.current = {
     filePath: props.path,
     projectRoot: props.root,
     collapsePreamble: props.settings.collapsePreamble,
+    preamble: mainPreamble,
   };
   const symbolsRef = useRef({
     symbols: props.symbols,
@@ -273,6 +243,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
   const completionSource = useRef(makeLatexCompletionSource(() => symbolsRef.current)).current;
   const lastCursorEmit = useRef(0);
   const [selectionBubble, setSelectionBubble] = useState<{ from: number; to: number; left: number; top: number } | null>(null);
+  const [reviewing, setReviewing] = useState(false);
   const bubbleFrame = useRef(0);
   const scheduleBubble = (view: EditorView) => {
     if (bubbleFrame.current) cancelAnimationFrame(bubbleFrame.current);
@@ -297,14 +268,16 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
       });
     });
   };
-  const [state] = useState(() =>
-    EditorState.create({
-      doc: props.value,
-      extensions: [
+  const [state] = useState(() => {
+    const extensions: Extension[] = [
         compartments.lineNumbers.of(props.settings.showLineNumbers ? lineNumbers() : []),
         highlightActiveLineGutter(),
         highlightSpecialChars(),
         history(),
+        writingTargets,
+        stableWritingInput,
+        writingReview,
+        writingFeedback,
         drawSelection(),
         dropCursor(),
         EditorState.allowMultipleSelections.of(true),
@@ -325,6 +298,11 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
         highlightSelectionMatches(),
         keymap.of([
           ...completionKeymap,
+          { key: 'Tab', run: view => !view.composing && acceptCompletion(view) },
+          { key: 'Escape', run: leaveWritingBlock },
+          { key: 'Alt-Enter', run: leaveWritingBlock },
+          { key: 'Alt-Shift-ArrowUp', run: view => moveContent(view, -1) },
+          { key: 'Alt-Shift-ArrowDown', run: view => moveContent(view, 1) },
           {
             key: 'ArrowDown',
             run: (view) => moveLogicalLine(view, 1, false),
@@ -408,7 +386,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
         })), { delay: 900 }),
 
         flashField,
-        latexHoverTooltip(() => symbolsRef.current.symbols),
+        writingReferenceHover(() => symbolsRef.current.symbols, () => symbolsRef.current.filePath),
         compartments.collab.of(props.collabExtension || []),
         compartments.visual.of(
           props.settings.visual
@@ -456,10 +434,12 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
             }
             return false;
           },
-          drop(event) {
+          drop(event, view) {
             const files = Array.from(event.dataTransfer?.files || []);
             if (!files.length || !propsRef.current.onDropFiles) return false;
             event.preventDefault();
+            const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+            if (pos !== null) view.dispatch({ selection: { anchor: pos } });
             propsRef.current.onDropFiles(files);
             return true;
           },
@@ -492,14 +472,19 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
             });
           }
         }),
-      ],
-    }),
-  );
+      ];
+    const cached = props.sessions.get(props.path);
+    return cached && cached.state.doc.toString() === props.value
+      ? cached.state.update({ effects: [StateEffect.reconfigure.of(extensions), composingWriting.of(false)] }).state
+      : EditorState.create({ doc: props.value, extensions });
+  });
 
   useEffect(() => {
     if (!hostRef.current) return;
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
+    const cached = props.sessions.get(props.path);
+    if (cached) view.requestMeasure({ read: () => null, write: () => { view.scrollDOM.scrollTop = cached.top; view.scrollDOM.scrollLeft = cached.left; } });
     const selection = state.selection.main;
     const line = state.doc.lineAt(selection.head);
     propsRef.current.onCursor({
@@ -508,10 +493,14 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
       selected: 0,
     });
     return () => {
+      props.sessions.set(props.path, { state: view.state, top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft });
       view.destroy();
       viewRef.current = null;
     };
   }, [state]);
+
+  useEffect(() => { viewRef.current?.dispatch({ effects: refreshWritingPreview.of(null) }); }, [mainPreamble]);
+  useEffect(() => { if (!reviewing) viewRef.current?.dispatch({ effects: reviewWriting.of(null) }); }, [reviewing]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -599,11 +588,30 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
         };
       });
     view.dispatch(setDiagnostics(view.state, diagnostics));
-  }, [props.diagnostics, props.path]);
+    view.dispatch({ effects: writingDiagnostics.of({ items: props.diagnostics.filter(item => !item.file || item.file.replaceAll('\\', '/') === file), stale: props.diagnosticsStale }) });
+  }, [props.diagnostics, props.path, props.diagnosticsStale]);
 
   useImperativeHandle(
     ref,
     () => ({
+      toggleReview() { setReviewing(current => !current); },
+      getPosition() { const view = viewRef.current; return view ? writingPosition(view, props.path) : null; },
+      restorePosition(point) { const view = viewRef.current; if (view && point.file === props.path) restoreWritingPosition(view, point); },
+      leaveNote() {
+        const view = viewRef.current; if (!view || view.composing) return;
+        leaveWritingBlock(view);
+        const at = view.state.doc.lineAt(view.state.selection.main.head).to;
+        view.dispatch({ changes: { from: at, insert: '\n% TODO: \n' }, selection: { anchor: at + 9 }, annotations: isolateHistory.of('full'), scrollIntoView: true });
+        view.focus();
+      },
+      toggleNote(note) {
+        const view = viewRef.current; if (!view || note.file !== props.path || note.line > view.state.doc.lines) return false;
+        const line = view.state.doc.line(note.line), next = toggleWritingNote(line.text, note);
+        if (next === null) return false;
+        view.dispatch({ changes: { from: line.from, to: line.to, insert: next }, annotations: isolateHistory.of('full'), effects: view.scrollSnapshot() });
+        view.focus(); return true;
+      },
+      moveContent(direction) { const view = viewRef.current; return view ? moveContent(view, direction) : false; },
       getPath: () => props.path,
       gotoLine(line: number, column = 1) {
         const view = viewRef.current;
@@ -619,6 +627,23 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
       },
       getContent() { return viewRef.current?.state.doc.toString() || ''; },
       getSelectionRange() { const s = viewRef.current?.state.selection.main; return { from: s?.from || 0, to: s?.to || 0 }; },
+      captureWriting(range) { const view = viewRef.current; return view ? rememberWriting(view, props.path, range) : null; },
+      applyWriting(target, text, cursor) {
+        const view = viewRef.current;
+        if (!view || target.file !== props.path || !applyWriting(view, target, text, cursor)) return false;
+        if (propsRef.current.settings.visual) enterWritingTable(view, view.state.selection.main.head);
+        return true;
+      },
+      restoreWriting(target) { const view = viewRef.current; if (view && target.file === props.path) restoreWriting(view, target); },
+      ensurePackages(packages) {
+        const view = viewRef.current;
+        if (!view) return;
+        const before = view.state.doc.toString(), next = ensureTexPackages(before, packages);
+        if (before === next) return;
+        let from = 0;
+        while (from < before.length && before[from] === next[from]) from++;
+        view.dispatch({ changes: { from, insert: next.slice(from, from + next.length - before.length) }, effects: view.scrollSnapshot() });
+      },
       insertLiteral(text, range) {
         const view = viewRef.current;
         if (!view) return;
@@ -827,6 +852,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
 
   return (
     <>
+      {reviewing && <WritingReviewBar root={props.root} file={props.path} saved={props.savedContent} onCompare={(source, label) => viewRef.current?.dispatch({ effects: reviewWriting.of({ source, label }) })} onClose={() => { setReviewing(false); viewRef.current?.dispatch({ effects: reviewWriting.of(null) }); viewRef.current?.focus(); }} />}
       <div className="editor-host" ref={hostRef} data-file={props.path} />
       {selectionBubble && createPortal(
         <div

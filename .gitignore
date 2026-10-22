@@ -10,3 +10,6 @@ artifacts/*.png
 .texpro-userdata/
 .ai-notes/
 docs/superpowers/
+
+# Local visual acceptance captures
+.impeccable/review/

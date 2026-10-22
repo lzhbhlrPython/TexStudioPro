@@ -1,0 +1,41 @@
+/* Content stays on the page; assistance follows the current writing position. */
+.cm-writing-table .cm-table-cell { display: block; min-height: 1.6em; min-width: 3ch; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; }
+.cm-writing-table .cm-table-cell:focus { outline: none; box-shadow: inset 0 -1px var(--accent); }
+.cm-writing-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-height: 26px; padding: 0 12px 5px; font: 11px/1.5 var(--font-ui); color: var(--editor-text); visibility: hidden; }
+.cm-writing-tools button:not(:first-child) { display: none; }
+.has-writing-cell .cm-writing-tools button:not(:first-child) { display: block; }
+.cm-writing-table:hover .cm-writing-tools, .cm-writing-table:focus-within .cm-writing-tools { visibility: visible; }
+.cm-writing-tools button { padding: 3px 6px; border-radius: 3px; }
+.cm-writing-tools button:hover { background: var(--math-hover); }
+.cm-writing-tools button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cm-music-data { font: 10px/1.6 var(--font-ui); color: var(--editor-text); padding: 2px 0; }
+.cm-writing-preview { max-height: 280px; overflow: auto; margin: 8px 0 18px; font: 12px/1.5 var(--font-ui); color: var(--editor-text); }
+.cm-writing-preview.cm-tikz-widget { border: 0; background: transparent; }
+.cm-writing-preview .cm-tikz-header { display: none; }
+.cm-writing-preview .cm-tikz-body { min-height: 24px; padding: 4px 0; }
+.cm-writing-preview .cm-tikz-body img { max-height: 250px; width: auto; max-width: 100%; object-fit: contain; }
+.cm-diagram-inline { display: inline-flex; vertical-align: middle; max-width: 100%; border: 0; margin: 0 4px; }
+.cm-diagram-inline .cm-tikz-header { display: none; }
+.cm-diagram-inline .cm-tikz-body { display: inline-flex; min-height: 24px; padding: 0; }
+.cm-diagram-inline .cm-tikz-body img { max-height: 150px; max-width: 360px; width: auto; }
+.cm-reference-info { display: flex; flex-direction: column; gap: 6px; max-width: min(380px, 70vw); padding: 10px 12px; color: var(--text); background: var(--popover); font: 12px/1.6 var(--font-ui); overflow-wrap: anywhere; }
+.cm-reference-info img { max-width: 100%; max-height: 150px; object-fit: contain; }
+.cm-reference-info button { color: var(--accent-strong); text-align: left; padding: 4px 0; }
+.cm-reference-info button:focus-visible, .cm-revision-tools button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.writing-notes { padding: 4px 12px; }
+.writing-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.writing-note > button:first-child { flex-shrink: 0; padding: 4px; color: var(--text-muted); }
+.writing-note > button:last-child { min-width: 0; flex: 1; text-align: left; display: flex; flex-direction: column; gap: 4px; font: 13px/1.6 var(--font-ui); overflow-wrap: anywhere; }
+.writing-note small { color: var(--text-muted); font-size: 11px; }
+.writing-note.done span { text-decoration: line-through; color: var(--text-muted); }
+.writing-review-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--panel); color: var(--text); font: 12px/1.6 var(--font-ui); }
+.writing-review-bar label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.writing-review-bar select { max-width: min(330px, 48vw); padding: 4px 6px; color: var(--text); background: var(--popover); border: 1px solid var(--border); border-radius: var(--radius); }
+.writing-review-bar > span { flex: 1; color: var(--text-muted); overflow-wrap: anywhere; }
+.cm-writing-revision { padding: 8px 0; font: 12px/1.6 var(--font-ui); color: var(--editor-text); }
+.cm-revision-before { margin: 0 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; text-decoration: line-through; opacity: .75; font: inherit; }
+.cm-revision-tools { display: flex; gap: 16px; flex-wrap: wrap; }
+.cm-revision-tools button { color: var(--accent-strong); padding: 3px 0; }
+.cm-revision-added { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
+.cm-writing-feedback { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 12px; color: var(--editor-text); font: 12px/1.6 var(--font-ui); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cm-writing-feedback small { font-size: 11px; color: var(--text-muted); }

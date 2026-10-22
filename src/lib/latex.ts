@@ -1,3 +1,4 @@
+import { skipTexSpace, texCommands, texGroup } from './texDocument';
 import type { Diagnostic, OutlineItem, OutlineKind, ProjectSymbols } from '../types';
 
 const SECTION_LEVELS: Record<string, number> = {
@@ -233,12 +234,34 @@ export function emptySymbols(): ProjectSymbols {
   return { labels: [], citations: [], environments: [], packages: [], images: [] };
 }
 
-export function collectLocalSymbols(text: string, symbols: ProjectSymbols): ProjectSymbols {
-  const labels = new Set(symbols.labels);
+export function collectLocalSymbols(text: string, symbols: ProjectSymbols, file?: string): ProjectSymbols {
+  const prior = symbols.references || [];
+  const ownKeys = new Set(file ? prior.filter(item => item.file === file).map(item => item.key) : []);
+  const otherKeys = new Set(prior.filter(item => item.file !== file).map(item => item.key));
+  const labels = new Set(symbols.labels.filter(key => !ownKeys.has(key) || otherKeys.has(key)));
   const citations = new Set(symbols.citations);
-  for (const match of text.matchAll(/\\label\{([^}]+)\}/g)) labels.add(match[1]);
-  for (const match of text.matchAll(/\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}/g)) citations.add(match[1]);
-  return { ...symbols, labels: [...labels].sort(), citations: [...citations].sort() };
+  const references = prior.filter(item => item.file !== file);
+  let context = '', line = 1, offset = 0;
+  for (const command of texCommands(text)) {
+    for (; offset < command.from; offset++) if (text[offset] === '\n') line++;
+    let at = skipTexSpace(text, command.to);
+    if (text[at] === '*') at = skipTexSpace(text, at + 1);
+    if (text[at] === '[') {
+      const optional = texGroup(text, at, '[', ']');
+      if (!optional) continue;
+      at = skipTexSpace(text, optional.to);
+    }
+    const group = texGroup(text, at);
+    if (!group) continue;
+    const value = text.slice(group.from + 1, group.to - 1);
+    if (/^(caption|part|chapter|section|subsection|subsubsection|paragraph)$/.test(command.name)) context = cleanLatexTitle(value);
+    if (command.name === 'bibitem') citations.add(value);
+    if (command.name === 'label') {
+      labels.add(value);
+      if (file && /\.(tex|ltx)$/i.test(file)) references.push({ key: value, file, line, text: context || value });
+    }
+  }
+  return { ...symbols, labels: [...labels].sort(), citations: [...citations].sort(), references };
 }
 
 export function formatDuration(ms: number): string {

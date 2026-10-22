@@ -1,5 +1,6 @@
 import { configs, generateSchematic, nextId, nodeLabel, restoreSchematic, type SchematicNode, type SchematicEdge } from '../lib/schematic';
 import type { SchematicMode } from '../lib/schematic';
+import { TexArtwork } from './TexArtwork';
 export type { SchematicMode } from '../lib/schematic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -394,7 +395,7 @@ export function SchematicStudio({ open, mode, projectRoot, filePath, onClose, on
             <div className="pane-label">{t('Preview')}</div>
             <div className="schematic-preview-canvas">
               {previewBusy && <div className="schematic-loading"><Loader2 size={16} className="spin" /><span>{t('Typesetting preview…')}</span></div>}
-              {!previewBusy && preview && <img src={preview} alt={t('Diagram preview')} />}
+              {!previewBusy && preview && <TexArtwork src={preview} alt={t('Diagram preview')} />}
               {!previewBusy && !preview && (previewError ? <div className="schematic-preview-error" role="alert"><strong>{t('Preview unavailable')}</strong><p>{previewError}</p><button className="secondary-btn" onClick={retry}>{t('Retry preview')}</button></div> : <span>{t('Preview will appear here.')}</span>)}
             </div>
             <details className="schematic-source" open>

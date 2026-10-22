@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('texpro', {
   stopPaperApi: () => ipcRenderer.invoke('paper-api:stop'),
   paperApiStatus: () => ipcRenderer.invoke('paper-api:status'),
   gitStatus: (root) => ipcRenderer.invoke('git:status', root),
+  gitReadFile: (root, revision, file) => ipcRenderer.invoke('git:read-file', root, revision, file),
   gitInit: (root) => ipcRenderer.invoke('git:init', root),
   gitCommit: (root, message) => ipcRenderer.invoke('git:commit', root, message),
   gitPull: (root) => ipcRenderer.invoke('git:pull', root),

@@ -47,6 +47,20 @@ async function gitInit(projectRoot) {
   return { ok: true };
 }
 
+async function gitReadFile(projectRoot, revision, file) {
+  const root = path.resolve(projectRoot), target = path.resolve(file);
+  if (!target.startsWith(root + path.sep)) throw new Error('File is outside the project');
+  if (!/^[a-f0-9]{7,64}$/i.test(String(revision))) throw new Error('Select a Git commit hash');
+  const repository = await runGit(['rev-parse', '--show-toplevel'], root);
+  if (repository.code !== 0) throw new Error('Project is not in a Git repository');
+  const canonicalTarget = path.join(fs.realpathSync(root), path.relative(root, target));
+  const relative = path.relative(fs.realpathSync(repository.stdout.trim()), canonicalTarget).split(path.sep).join('/');
+  const result = await runGit(['show', '--no-ext-diff', '--no-textconv', `${revision}:${relative}`], root);
+  if (result.code !== 0) throw new Error(result.stderr || 'File is unavailable in this commit');
+  if (result.stdout.length > 5000000) throw new Error('Review baseline is too large');
+  return result.stdout;
+}
+
 async function gitCommit(projectRoot, message) {
   const root = path.resolve(projectRoot);
   await runGit(['add', '-A'], root);
@@ -81,4 +95,4 @@ async function overleafClone(url) {
 }
 
 
-module.exports = { gitStatus, gitInit, gitCommit, gitPull, gitPush, overleafClone };
+module.exports = { gitStatus, gitReadFile, gitInit, gitCommit, gitPull, gitPush, overleafClone };

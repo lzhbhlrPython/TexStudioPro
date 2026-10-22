@@ -41,6 +41,7 @@ export interface TexProApi {
   runProjectAction: (root: string, action: { command: string; args: string[]; cwd?: string; env?: Record<string,string> }, rootFile: string) => Promise<{ ok: boolean; code: number | null; stdout: string; stderr: string; timedOut: boolean }>;
   checkTexAssets: (packages: string[], classes: string[]) => Promise<{ packages: Record<string, { installed: boolean; path: string }>; classes: Record<string, { installed: boolean; path: string }> }>;
   gitStatus: (root: string) => Promise<{ initialized: boolean; branch: string; changes: Array<{ status: string; file: string }>; ahead: number; behind: number; commits: Array<{ hash: string; subject: string }> }>;
+  gitReadFile: (root: string, revision: string, file: string) => Promise<string>;
   gitInit: (root: string) => Promise<{ ok: boolean }>;
   gitCommit: (root: string, message: string) => Promise<{ ok: boolean; output: string }>;
   gitPull: (root: string) => Promise<{ ok: boolean; output: string }>;

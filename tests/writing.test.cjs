@@ -21,6 +21,11 @@ Text \chemfig{H_3C-[:30]C(=[2]O)-O-{CH_3}} after.
 \begin{tikzpicture}\node {outer {nested}};\end{tikzpicture}`;
   const blocks = d.diagramBlocks(text);
   assert.equal(blocks.length, 3);
+  assert.equal(d.diagramBlocks(String.raw`\documentclass{article}
+\newcommand{\example}{\chemfig{H-O-H}}
+\begin{document}
+\chemfig{C-C}
+\end{document}`).length, 1);
   assert.equal(blocks[0].source, String.raw`\chemfig{H_3C-[:30]C(=[2]O)-O-{CH_3}}`);
   assert.equal(blocks[1].kind, 'circuit');
   for (const b of blocks) assert.equal(text.slice(b.from, b.to), b.source);

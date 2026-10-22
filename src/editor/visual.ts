@@ -1,15 +1,23 @@
 import { MusicWidget, musicSourceField, revealMusicSource } from './musicWidget';
 import { findMusicBlocks } from '../lib/music';
+import { diagramBlocks, skipTexSpace, texCommands, texDocumentStart, texEnvironments, texGroup, writingTable, type TexCommand } from '../lib/texDocument';
+import { WritingTableWidget } from './tableWidget';
+import { focusWriting, selectionTouches, writingComposition, tableWritingField, writeTableCell } from './writing';
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { StateEffect, StateField, type EditorState, type Extension, type Range } from '@codemirror/state';
 import katex from 'katex';
 import { assetUrl, dirname, joinPath, parseDocumentTitle } from '../lib/latex';
 import { t } from '../i18n';
+import { themeTexArtwork } from '../lib/texArtwork';
+import { reviewedRanges } from './writingReview';
+
+export const refreshWritingPreview = StateEffect.define<null>();
 
 export interface VisualContext {
   filePath: string;
   projectRoot: string;
   collapsePreamble: boolean;
+  preamble?: string;
 }
 
 export interface VisualConfig {
@@ -30,7 +38,7 @@ function renderMath(tex: string, displayMode: boolean): string {
   try {
     const html = katex.renderToString(tex, {
       displayMode,
-      throwOnError: false,
+      throwOnError: true,
       errorColor: 'var(--danger)',
       strict: 'ignore',
       trust: false,
@@ -55,11 +63,7 @@ function renderMath(tex: string, displayMode: boolean): string {
 }
 
 function activate(view: EditorView, pos: number) {
-  view.dispatch({
-    selection: { anchor: pos },
-    scrollIntoView: true,
-  });
-  view.focus();
+  focusWriting(view, pos);
 }
 
 abstract class LatexWidget extends WidgetType {
@@ -247,14 +251,7 @@ class TableWidget extends LatexWidget {
     hint.textContent = `${t('n rows', { n: this.rows })} · ${t('click to edit source')}`;
     wrap.appendChild(hint);
     this.bind(wrap, view);
-    wrap.addEventListener('mousedown', (event) => {
-      if (event.button !== 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      window.dispatchEvent(new CustomEvent('texpro:open-table', {
-        detail: { source: this.source, focusPos: this.focusPos },
-      }));
-    }, true);
+
     return wrap;
   }
 
@@ -429,40 +426,48 @@ interface TikzResult {
 
 const tikzRequests = new Map<string, Promise<TikzResult>>();
 
-function requestTikz(source: string, projectRoot: string, filePath: string) {
-  const key = projectRoot + '::' + source;
+function requestTikz(source: string, projectRoot: string, filePath: string, preamble?: string) {
+  const key = JSON.stringify([projectRoot, filePath, preamble, source]);
   const cached = tikzRequests.get(key);
   if (cached) return cached;
   const request: Promise<TikzResult> = window.texpro
-    .renderTikz({ projectRoot, filePath, source })
-    .catch((error): TikzResult => ({ ok: false, error: String(error) }));
+    .renderTikz({ projectRoot, filePath, source, preamble })
+    .catch((error): TikzResult => ({ ok: false, error: String(error) }))
+    .then(result => { if (!result.ok) tikzRequests.delete(key); return result; });
+  if (tikzRequests.size >= 128) tikzRequests.delete(tikzRequests.keys().next().value!);
   tikzRequests.set(key, request);
   return request;
 }
 
 class TikzWidget extends LatexWidget {
+  private timer?: ReturnType<typeof setTimeout>;
   constructor(
     readonly source: string,
     readonly projectRoot: string,
     readonly filePath: string,
     focusPos: number,
+    readonly kind = 'tikz',
+    readonly inline = false,
+    readonly previewOnly = false,
+    readonly preamble?: string,
   ) {
     super(focusPos);
   }
 
   eq(other: TikzWidget) {
-    return other.source === this.source && other.filePath === this.filePath;
+    return other.source === this.source && other.filePath === this.filePath && other.preamble === this.preamble && other.inline === this.inline && other.previewOnly === this.previewOnly && other.focusPos === this.focusPos;
   }
 
   toDOM(view: EditorView) {
-    const wrap = document.createElement('div');
-    wrap.className = 'cm-tikz-widget';
+    const wrap = document.createElement(this.inline ? 'span' : 'div');
+    wrap.className = `cm-tikz-widget${this.inline ? ' cm-diagram-inline' : ''}${this.previewOnly ? ' cm-writing-preview' : ''}`;
+    wrap.dataset.diagramKind = this.kind;
 
     const header = document.createElement('div');
     header.className = 'cm-tikz-header';
     const label = document.createElement('span');
     label.className = 'cm-tikz-label';
-    label.textContent = 'TikZ';
+    label.textContent = this.kind === 'chemistry' ? t('Chemical structure') : this.kind === 'circuit' ? t('Circuit / logic') : 'TikZ';
     const status = document.createElement('span');
     status.className = 'cm-tikz-status';
     status.textContent = t('rendering…');
@@ -474,7 +479,7 @@ class TikzWidget extends LatexWidget {
     studio.addEventListener('mousedown', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      window.dispatchEvent(new CustomEvent('texpro:open-tikz', { detail: { source: this.source } }));
+      window.dispatchEvent(new CustomEvent('texpro:open-tikz', { detail: { source: this.source, from: this.focusPos - 1, to: this.focusPos - 1 + this.source.length, file: this.filePath } }));
     });
     header.append(label, status, studio);
 
@@ -487,17 +492,20 @@ class TikzWidget extends LatexWidget {
     wrap.append(header, body);
     this.bind(body, view);
 
-    requestTikz(this.source, this.projectRoot, this.filePath).then((result) => {
+    this.timer = setTimeout(() => requestTikz(this.source, this.projectRoot, this.filePath, this.preamble).then((result) => {
       if (!body.isConnected) return;
       if (result.ok && result.svgPath) {
         const img = document.createElement('img');
+        img.crossOrigin = 'anonymous';
+        const frame = document.createElement('span'); frame.className = 'tex-artwork'; frame.dataset.artwork = 'document-color';
+        img.addEventListener('load', () => { themeTexArtwork(frame, img); view.requestMeasure(); });
         img.src = assetUrl(result.svgPath);
         img.alt = 'TikZ diagram';
         img.loading = 'lazy';
         img.addEventListener('error', () => {
           body.innerHTML = `<div class="cm-tikz-error">${t('Could not load the rendered diagram.')}</div>`;
         });
-        body.replaceChildren(img);
+        frame.appendChild(img); body.replaceChildren(frame);
         status.textContent = result.cached ? 'cached' : result.engine || 'ready';
         status.classList.add('ready');
       } else {
@@ -518,7 +526,8 @@ class TikzWidget extends LatexWidget {
           wrap.appendChild(details);
         }
       }
-    });
+      view.requestMeasure();
+    }), 600);
 
     return wrap;
   }
@@ -526,6 +535,7 @@ class TikzWidget extends LatexWidget {
   ignoreEvent() {
     return false;
   }
+  destroy() { clearTimeout(this.timer); }
 }
 
 class ClearWidget extends WidgetType {
@@ -535,6 +545,14 @@ class ClearWidget extends WidgetType {
 
   toDOM() {
     return document.createElement('span');
+  }
+}
+
+class MusicDataWidget extends WidgetType {
+  eq() { return true; }
+  toDOM() {
+    const dom = document.createElement('div'); dom.className = 'cm-music-data'; dom.textContent = t('Music data · preserved');
+    return dom;
   }
 }
 
@@ -633,6 +651,18 @@ function makeMarkerRange(from: number, to: number, classes: string[]): Range<Dec
   return Decoration.mark({ class: classes.join(' ') }).range(from, to);
 }
 
+function textArgument(text: string, command: TexCommand) {
+  let at = command.to;
+  if (text[at] === '*') at++;
+  at = skipTexSpace(text, at);
+  if (text[at] === '[') {
+    const option = texGroup(text, at, '[', ']');
+    if (!option) return null;
+    at = skipTexSpace(text, option.to);
+  }
+  return texGroup(text, at);
+}
+
 function parseTabular(body: string, spec: string): string | null {
   const cleaned = body
     .replace(/\\(?:toprule|midrule|bottomrule|hline|endhead|endfirsthead|endfoot|endlastfoot)\b/g, '')
@@ -670,8 +700,8 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
   const text = state.doc.toString();
   const ranges: Range<Decoration>[] = [];
   const occupied: Occupied[] = [];
-  const selection = state.selection.main;
-  const touched = (from: number, to: number) => selection.from < to && selection.to > from;
+  const revisions = state.field(reviewedRanges, false) || [];
+  const touched = (from: number, to: number) => selectionTouches(state, { from, to }) || revisions.some(hunk => hunk.from <= to && hunk.to >= from);
 
   const addBlock = (from: number, to: number, widget: WidgetType) => {
     ranges.push(Decoration.replace({ widget, block: true }).range(from, to));
@@ -680,7 +710,15 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
 
   for (const block of findMusicBlocks(text)) {
     // Reserve the entire block before math/TikZ scanners see generated TeX or metadata.
-    if (state.field(musicSourceField, false) === block.id) occupied.push({ from: block.from, to: block.to });
+    if (state.field(musicSourceField, false) === block.id || touched(block.from, block.to)) {
+      occupied.push({ from: block.from, to: block.to });
+      ranges.push(Decoration.widget({ widget: new MusicWidget(block, context.projectRoot, true), block: true, side: 1 }).range(block.to));
+      const metadata = /^% texpro-music-data:.*$/m.exec(block.source);
+      if (metadata) {
+        const from = block.from + metadata.index, to = from + metadata[0].length;
+        if (!touched(from, to)) ranges.push(Decoration.replace({ widget: new MusicDataWidget(), block: true }).range(from, to));
+      }
+    }
     else addBlock(block.from, block.to, new MusicWidget(block, context.projectRoot));
   }
 
@@ -743,29 +781,32 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
         .replace(/\\label\{[^}]*\}/g, '')
         .replace(/\\(?:nonumber|notag)\b/g, '')
         .trim();
-      if (!tex) continue;
+      if (!tex || !renderMath(tex, false)) continue;
       if (pattern.environment) {
         const environment = match[1];
         const wrapper = /^(align|eqnarray)/.test(environment) ? 'aligned' : 'gathered';
         tex = `\\begin{${wrapper}}${tex}\\end{${wrapper}}`;
       }
       const label = match[0].match(/\\label\{([^}]+)\}/)?.[1] ?? null;
-      addBlock(startLine.from, endLine.to, new DisplayMathWidget(tex, label, startLine.from + 1));
+      if (renderMath(tex, true)) addBlock(startLine.from, endLine.to, new DisplayMathWidget(tex, label, startLine.from + 1));
     }
   }
 
-  for (const match of text.matchAll(/\\begin\{(tabular|tabularx|longtable)\}(?:\[[^\]]*\])?\{([^}]*)\}([\s\S]*?)\\end\{\1\}/g)) {
-    if (match.index === undefined) continue;
-    const from = match.index;
-    const to = from + match[0].length;
-    if (touched(from, to) || overlaps(from, to, occupied)) continue;
-    const html = parseTabular(match[3], match[2]);
-    if (!html) continue;
-    const startLine = state.doc.lineAt(from);
-    const endLine = state.doc.lineAt(to);
+  for (const block of texEnvironments(text, ['tabular', 'tabularx', 'longtable'])) {
+    const { from, to } = block;
+    if (overlaps(from, to, occupied)) continue;
+    const parsed = writingTable(text, block);
+    const active = state.field(tableWritingField, false);
+    if (touched(from, to) && (!parsed || active?.from !== from || revisions.some(hunk => hunk.from <= to && hunk.to >= from))) continue;
+    const startLine = state.doc.lineAt(from), endLine = state.doc.lineAt(to);
     if (startLine.text.slice(0, from - startLine.from).trim() || endLine.text.slice(to - endLine.from).trim()) continue;
-    const rows = (html.match(/<tr>/g) || []).length;
-    addBlock(startLine.from, endLine.to, new TableWidget(html, startLine.from + 1, rows, match[0]));
+    if (parsed) addBlock(startLine.from, endLine.to, new WritingTableWidget(parsed));
+    else {
+      // Complex tables remain losslessly editable as TeX; no simplified model writes them back.
+      const source = text.slice(from, to), spec = source.match(/\\begin\{[^}]+\}(?:\[[^\]]*\])?\{([^}]*)\}/);
+      const html = spec && parseTabular(source.slice(spec[0].length, source.lastIndexOf('\\end')), spec[1]);
+      if (html) addBlock(startLine.from, endLine.to, new TableWidget(html, from + 1, (html.match(/<tr>/g) || []).length, source));
+    }
   }
 
   for (const match of text.matchAll(/\\begin\{(verbatim|lstlisting|minted)\}(?:\[([^\]]*)\])?(?:\{([^}]*)\})?([\s\S]*?)\\end\{\1\}/g)) {
@@ -782,19 +823,22 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
     addBlock(startLine.from, endLine.to, new CodeBlockWidget(code, language, startLine.from + 1));
   }
 
-  for (const match of text.matchAll(/\\begin\{tikzpicture\}(?:\[[^\]]*\])?[\s\S]*?\\end\{tikzpicture\}/g)) {
-    if (match.index === undefined) continue;
-    const from = match.index;
-    const to = from + match[0].length;
-    if (touched(from, to) || overlaps(from, to, occupied)) continue;
-    const startLine = state.doc.lineAt(from);
-    const endLine = state.doc.lineAt(to);
-    if (startLine.text.slice(0, from - startLine.from).trim() || endLine.text.slice(to - endLine.from).trim()) continue;
-    addBlock(
-      startLine.from,
-      endLine.to,
-      new TikzWidget(match[0], context.projectRoot, context.filePath, startLine.from + 1),
-    );
+  for (const block of diagramBlocks(text)) {
+    const { from, to } = block;
+    if (overlaps(from, to, occupied)) continue;
+    const startLine = state.doc.lineAt(from), endLine = state.doc.lineAt(to);
+    const active = touched(from, to), inline = !!startLine.text.slice(0, from - startLine.from).trim() || !!endLine.text.slice(to - endLine.from).trim();
+    const widget = new TikzWidget(block.source, context.projectRoot, context.filePath, from + 1, block.kind, inline, active, context.preamble);
+    if (active) {
+      occupied.push({ from, to });
+      if (!inline) ranges.push(Decoration.widget({ widget, block: true, side: 1 }).range(to));
+      continue;
+    }
+    if (!startLine.text.slice(0, from - startLine.from).trim() && !endLine.text.slice(to - endLine.from).trim()) addBlock(startLine.from, endLine.to, widget);
+    else {
+      ranges.push(Decoration.replace({ widget }).range(from, to));
+      occupied.push({ from, to });
+    }
   }
 
   for (const match of text.matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g)) {
@@ -815,35 +859,20 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
     }
   }
 
-  const headingPattern = /^(\s*)\\(part|chapter|section|subsection|subsubsection|paragraph)\*?\s*(?:\[[^\]]*\])?\s*\{/;
-  const levelMap: Record<string, number> = {
-    part: 1,
-    chapter: 1,
-    section: 1,
-    subsection: 2,
-    subsubsection: 3,
-    paragraph: 4,
-  };
-  for (let lineNumber = 1; lineNumber <= state.doc.lines; lineNumber++) {
-    const line = state.doc.line(lineNumber);
-    const match = headingPattern.exec(line.text);
-    if (!match) continue;
-    if (touched(line.from, line.to)) continue;
-    const level = levelMap[match[2]] || 1;
-    ranges.push(Decoration.line({ class: `cm-heading-line cm-heading-${level}` }).range(line.from));
-    const open = line.from + match[0].length - 1;
-    if (!overlaps(line.from, open + 1, occupied)) {
-      ranges.push(Decoration.replace({ widget: new SectionBadgeWidget(level, match[2], line.from + 1) }).range(line.from, open + 1));
-      occupied.push({ from: line.from, to: open + 1 });
-    }
-    const close = line.text.lastIndexOf('}');
-    if (close > match[0].length - 1 && close === line.text.length - 1) {
-      const closePos = line.from + close;
-      if (!overlaps(closePos, closePos + 1, occupied)) {
-        ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(closePos, closePos + 1));
-        occupied.push({ from: closePos, to: closePos + 1 });
-      }
-    }
+  const bodyStart = texDocumentStart(text)?.to ?? 0;
+  const inlineCommands = [...texCommands(text)].filter(c => c.from >= bodyStart);
+  const headingLevels: Record<string, number> = { part: 1, chapter: 1, section: 1, subsection: 2, subsubsection: 3, paragraph: 4 };
+  for (const command of inlineCommands) {
+    const level = headingLevels[command.name];
+    if (!level) continue;
+    const group = textArgument(text, command);
+    if (!group || touched(command.from, group.to) || overlaps(command.from, group.to, occupied)) continue;
+    const line = state.doc.lineAt(command.from);
+    if (text.slice(line.from, command.from).trim()) continue;
+    for (let n = line.number; n <= state.doc.lineAt(group.to).number; n++) ranges.push(Decoration.line({ class: `cm-heading-line cm-heading-${level}` }).range(state.doc.line(n).from));
+    ranges.push(Decoration.replace({ widget: new SectionBadgeWidget(level, command.name, command.from + 1) }).range(command.from, group.from + 1));
+    ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(group.to - 1, group.to));
+    occupied.push({ from: command.from, to: group.from + 1 }, { from: group.to - 1, to: group.to });
   }
 
   for (let lineNumber = 1; lineNumber <= state.doc.lines; lineNumber++) {
@@ -902,21 +931,14 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
     occupied.push({ from, to });
   }
 
-  for (let lineNumber = 1; lineNumber <= state.doc.lines; lineNumber++) {
-    const line = state.doc.line(lineNumber);
-    const caption = /^(\s*)\\caption\s*\{/.exec(line.text);
-    if (!caption) continue;
-    if (touched(line.from, line.to) || overlaps(line.from, line.to, occupied)) continue;
-    const open = line.from + caption[0].length - 1;
-    const close = line.text.lastIndexOf('}');
-    if (close > caption[0].length - 1) {
-      ranges.push(Decoration.line({ class: 'cm-caption-line' }).range(line.from));
-      ranges.push(Decoration.replace({ widget: new CaptionBadgeWidget(line.from + 1) }).range(line.from, open + 1));
-      if (close === line.text.length - 1) {
-        ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(line.from + close, line.from + close + 1));
-      }
-      occupied.push({ from: line.from, to: line.to });
-    }
+  for (const command of inlineCommands) {
+    if (command.name !== 'caption') continue;
+    const group = textArgument(text, command);
+    if (!group || touched(command.from, group.to) || overlaps(command.from, group.to, occupied)) continue;
+    ranges.push(Decoration.line({ class: 'cm-caption-line' }).range(state.doc.lineAt(command.from).from));
+    ranges.push(Decoration.replace({ widget: new CaptionBadgeWidget(command.from + 1) }).range(command.from, group.from + 1));
+    ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(group.to - 1, group.to));
+    occupied.push({ from: command.from, to: group.from + 1 }, { from: group.to - 1, to: group.to });
   }
 
   for (const match of text.matchAll(/\\LaTeX\s*\{\}/g)) {
@@ -957,48 +979,20 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
     ranges.push(makeMarkerRange(from, to, ['cm-comment', isTodo ? 'cm-todo-comment' : '']));
   }
 
-  const hrefPattern = /\\href\{([^}]*)\}\{([^{}]*)\}/g;
-  for (const match of text.matchAll(hrefPattern)) {
-    if (match.index === undefined) continue;
-    const from = match.index;
-    const to = from + match[0].length;
-    if (touched(from, to) || overlaps(from, to, occupied)) continue;
-    const textStart = from + match[0].indexOf('{', match[0].indexOf('}') + 1) + 1;
-    const textEnd = textStart + match[2].length;
-    ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(from, textStart));
-    ranges.push(
-      Decoration.mark({
-        class: 'cm-link',
-        attributes: { 'data-href': match[1], title: match[1] },
-      }).range(textStart, textEnd),
-    );
-    ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(textEnd, to));
-    occupied.push({ from, to });
-  }
-
-  const formatPattern = /\\(textbf|textit|emph|textsl|underline|texttt|textsc)\{([^{}\n]*)\}/g;
-  for (const match of text.matchAll(formatPattern)) {
-    if (match.index === undefined) continue;
-    const from = match.index;
-    const to = from + match[0].length;
-    if (touched(from, to) || overlaps(from, to, occupied)) continue;
-    const contentStart = from + match[0].indexOf('{') + 1;
-    const contentEnd = contentStart + match[2].length;
-    if (contentEnd <= contentStart) continue;
-    const cls =
-      match[1] === 'textbf'
-        ? 'cm-bold'
-        : match[1] === 'texttt'
-          ? 'cm-inline-code'
-          : match[1] === 'underline'
-            ? 'cm-underline'
-            : match[1] === 'textsc'
-              ? 'cm-smallcaps'
-              : 'cm-italic';
-    ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(from, contentStart));
-    ranges.push(Decoration.mark({ class: cls }).range(contentStart, contentEnd));
-    ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(contentEnd, to));
-    occupied.push({ from, to });
+  const formats: Record<string, string> = { textbf: 'cm-bold', texttt: 'cm-inline-code', underline: 'cm-underline', textsc: 'cm-smallcaps', textit: 'cm-italic', emph: 'cm-italic', textsl: 'cm-italic' };
+  for (const command of inlineCommands) {
+    const cls = formats[command.name];
+    if (!cls && command.name !== 'href') continue;
+    const first = textArgument(text, command);
+    const group = command.name === 'href' && first ? texGroup(text, skipTexSpace(text, first.to)) : first;
+    if (!group || group.to <= group.from + 2 || touched(command.from, group.to) || overlaps(command.from, group.to, occupied)) continue;
+    const contentStart = group.from + 1, contentEnd = group.to - 1;
+    const mark = cls ? { class: cls } : { class: 'cm-link', attributes: { 'data-href': text.slice(first!.from + 1, first!.to - 1), title: text.slice(first!.from + 1, first!.to - 1) } };
+    ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(command.from, contentStart));
+    ranges.push(Decoration.mark(mark).range(contentStart, contentEnd));
+    ranges.push(Decoration.replace({ widget: new ClearWidget() }).range(contentEnd, group.to));
+    // Only syntax occupies source; nested formatting and math still render inside its body.
+    occupied.push({ from: command.from, to: contentStart }, { from: contentEnd, to: group.to });
   }
 
   const verbPattern = /\\verb(.)([^\\n]*?)\1/g;
@@ -1024,7 +1018,7 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
       const to = from + match[0].length;
       if (touched(from, to) || overlaps(from, to, occupied)) continue;
       const tex = match[1].trim();
-      if (!tex) continue;
+      if (!tex || !renderMath(tex, false)) continue;
       ranges.push(Decoration.replace({ widget: new InlineMathWidget(tex, from + 1) }).range(from, to));
       occupied.push({ from, to });
     }
@@ -1033,7 +1027,8 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
       if (match.index === undefined) continue;
       const from = line.from + match.index;
       const to = from + match[0].length;
-      if (overlaps(from, to, occupied)) continue;
+      if (touched(from, to) || overlaps(from, to, occupied)) continue;
+      if (!renderMath(match[1].trim(), false)) continue;
       ranges.push(Decoration.replace({ widget: new InlineMathWidget(match[1].trim(), from + 2) }).range(from, to));
       occupied.push({ from, to });
     }
@@ -1042,54 +1037,20 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
   return Decoration.set(ranges, true);
 }
 
-const setVisualDecorations = StateEffect.define<DecorationSet>();
-
 export function visualLatex(config: VisualConfig): Extension {
   const field = StateField.define<DecorationSet>({
-    create(state) {
-      return buildDecorations(state, config.get());
+    create(state) { return buildDecorations(state, config.get()); },
+    update(value, tr) {
+      if (tr.state.field(writingComposition)) return value.map(tr.changes);
+      if (tr.docChanged || tr.selection || tr.effects.length) return buildDecorations(tr.state, config.get());
+      return value;
     },
-    update(value, transaction) {
-      // Keep interactive music DOM mounted while its entire source range changes.
-      // Mapping first would remove the replacement, losing focus before the next frame.
-      if (transaction.docChanged && (transaction.isUserEvent('input.music') || transaction.isUserEvent('undo') || transaction.isUserEvent('redo'))) return buildDecorations(transaction.state, config.get());
-      let next = value.map(transaction.changes);
-      for (const effect of transaction.effects) {
-        if (effect.is(setVisualDecorations)) next = effect.value;
-      }
-      return next;
-    },
-    provide: (candidate) => EditorView.decorations.from(candidate),
+    provide: candidate => EditorView.decorations.from(candidate),
   });
-
-  const renderer = ViewPlugin.fromClass(
-    class {
-      private frame = 0;
-
-      constructor(private readonly view: EditorView) {}
-
-      update(update: ViewUpdate) {
-        if (!update.docChanged && !update.selectionSet && !update.transactions.some(tr => tr.effects.some(e => e.is(revealMusicSource)))) return;
-        if (this.frame) return;
-        this.frame = window.requestAnimationFrame(() => {
-          this.frame = 0;
-          if (!this.view.dom.isConnected) return;
-          this.view.dispatch({
-            effects: setVisualDecorations.of(buildDecorations(this.view.state, config.get())),
-          });
-        });
-      }
-
-      destroy() {
-        if (this.frame) window.cancelAnimationFrame(this.frame);
-      }
-    },
-  );
-
   return [
     musicSourceField,
+    tableWritingField,
     field,
-    renderer,
     EditorView.domEventHandlers({
       mousedown(event, view) {
         const target = event.target as HTMLElement | null;
@@ -1099,8 +1060,7 @@ export function visualLatex(config: VisualConfig): Extension {
           event.stopPropagation();
           const pos = Number(rendered.dataset.texproPos);
           if (Number.isFinite(pos)) {
-            view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
-            view.focus();
+            focusWriting(view, pos);
           }
           return true;
         }

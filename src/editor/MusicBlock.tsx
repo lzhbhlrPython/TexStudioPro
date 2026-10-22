@@ -3,6 +3,7 @@ import { Code2, FileMusic, Loader2, Minus, Music2, Plus, RefreshCw, Undo2, X } f
 import * as pdfjs from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useI18n } from '../i18n';
+import { themeTexArtwork } from '../lib/texArtwork';
 import { musicBlock, musicIssues, musicTemplates, newScore, previewDocument, type MusicNote, type MusicScore, type ParsedMusicBlock } from '../lib/music';
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 const pitchName = (p: number | null) => p === null ? 'Rest' : `${['C', 'D', 'E', 'F', 'G', 'A', 'B'][((p % 7) + 7) % 7]}${4 + Math.floor(p / 7)}`;
@@ -69,7 +70,7 @@ function NotationInput({ score, part, selected, onSelect, onPitch, onAdd }: {
         })}
   </svg></div>;
 }
-function ScorePreview({ root, source, refresh, onMeasure, onSource }: {
+export function ScorePreview({ root, source, refresh, onMeasure, onSource }: {
     root: string;
     onSource: () => void;
     source: string;
@@ -138,7 +139,10 @@ function ScorePreview({ root, source, refresh, onMeasure, onSource }: {
                         pages.push(canvas);
                 }
                 if (!dead) {
-                    host.current?.replaceChildren(...pages);
+                    host.current?.replaceChildren(...pages.map(canvas => {
+                        const frame = document.createElement('span');
+                        frame.appendChild(canvas); themeTexArtwork(frame, canvas); return frame;
+                    }));
                     onMeasure();
                 }
             }
@@ -161,21 +165,20 @@ function ScorePreview({ root, source, refresh, onMeasure, onSource }: {
     }, [root, source, refresh, retry]);
     return <><div className="music-typeset" ref={host} aria-label={t('TeX score preview')}/><div className={`music-preview-state ${error?'has-error':''}`} role="status">{busy && <><Loader2 size={12} className="spin"/>{t('Typesetting score…')}</>}{error && <div className="music-preview-error music-error" role="alert"><strong>{t('Could not typeset this score')}</strong><p>{t('Your source is safe. Check that the TeX music packages are installed, then try again.')}</p><div className="music-error-actions"><button onClick={()=>setRetry(x=>x+1)}>{t('Retry preview')}</button><button onClick={onSource}>{t('Edit TeX source')}</button></div><details><summary>{t('Technical details')}</summary><pre>{error}</pre></details></div>}</div></>;
 }
-export function MusicBlock({ block, root, onChange, onSource, onUndo, onMeasure }: {
+export function MusicBlock({ block, root, onChange, onSource, onContinue, onUndo, onMeasure }: {
     block: ParsedMusicBlock;
     root: string;
     onChange: (source: string) => void;
     onSource: () => void;
+    onContinue: () => void;
     onUndo: () => void;
     onMeasure: () => void;
 }) {
     const { t } = useI18n();
-    const [editing, setEditing] = useState(false), [raw, setRaw] = useState(!block.score), [part, setPart] = useState(0), [selected, setSelected] = useState(0), [refresh, setRefresh] = useState(0), [draft, setDraft] = useState(block.body);
+    const [editing, setEditing] = useState(false), [part, setPart] = useState(0), [selected, setSelected] = useState(0), [refresh, setRefresh] = useState(0);
     const score = block.score, host = useRef<HTMLElement>(null);
     const p = score?.parts[Math.min(part, score.parts.length - 1)], n = p?.notes[selected];
-    useEffect(() => { setDraft(block.body); if (!block.score)
-        setRaw(true); }, [block.body, block.score]);
-    useEffect(() => { onMeasure(); }, [editing, raw, part, score?.parts.length, onMeasure]);
+    useEffect(() => { onMeasure(); }, [editing, part, score?.parts.length, onMeasure]);
     const change = (next: MusicScore) => onChange(musicBlock(next, block.id));
     const patch = (patch: Partial<MusicScore>) => { if (score)
         change({ ...score, ...patch }); };
@@ -189,7 +192,7 @@ export function MusicBlock({ block, root, onChange, onSource, onUndo, onMeasure 
         patch({ parts: score.parts.map((v, i) => i === part ? { ...v, notes: v.notes.filter((_, j) => j !== selected) } : v) });
         setSelected(Math.max(0, selected - 1));
     } };
-    return <section className={`cm-music-block ${editing ? 'editing' : ''}`} ref={host} contentEditable={false} aria-label={t('Music block')} data-testid="music-block" onBlur={e => { if (!host.current?.contains(e.relatedTarget as Node) && !raw)
+    return <section className={`cm-music-block ${editing ? 'editing' : ''}`} ref={host} contentEditable={false} aria-label={t('Music block')} data-testid="music-block" onBlur={e => { if (!host.current?.contains(e.relatedTarget as Node))
         setEditing(false); }} onKeyDown={e => {
             if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
                 e.preventDefault();
@@ -199,10 +202,10 @@ export function MusicBlock({ block, root, onChange, onSource, onUndo, onMeasure 
             if (e.key === 'Escape') {
                 e.preventDefault();
                 setEditing(false);
-                onMeasure();
+                onContinue();
             }
         }}>
-    <div className="music-block-actions"><span><Music2 size={13}/>{t('Music')}</span><div><button title={t('Edit score')} aria-label={t('Edit score')} onClick={() => setEditing(!editing)}><FileMusic size={14}/>{t(editing ? 'Done' : 'Edit score')}</button><button title={t('Edit TeX source')} aria-label={t('Edit TeX source')} onClick={onSource}><Code2 size={14}/></button></div></div>
+    <div className="music-block-actions"><span><Music2 size={13}/>{t('Music')}</span><div><button title={t('Write music')} aria-label={t('Write music')} onClick={onSource}><Code2 size={14}/>{t('Write music')}</button>{score && <button title={t('Notation tools')} aria-label={t('Notation tools')} aria-expanded={editing} onClick={() => setEditing(!editing)}><FileMusic size={14}/>{t(editing ? 'Hide notation tools' : 'Notation tools')}</button>}</div></div>
     {editing && score && <div className="music-inline-controls">
       <div className="music-meta"><label>{t('Score template')}<select aria-label={t('Score template')} value="" onChange={e => { change(newScore(e.target.value)); setPart(0); setSelected(0); }}><option value="" disabled>{t('Choose template')}</option>{musicTemplates.map(a => <option key={a.id} value={a.id}>{t(a.name)}</option>)}</select></label><label>{t('Notation')}<select value={score.kind} onChange={e => patch({ kind: e.target.value as MusicScore['kind'] })}><option value="staff">{t('Staff notation')}</option><option value="numbered">{t('Numbered notation')}</option><option value="guitar">{t('Guitar tablature')}</option></select></label><label>{t('Score title')}<input value={score.title} maxLength={200} onChange={e => patch({ title: e.target.value })}/></label></div>
       <div className="music-part-tabs" role="group" aria-label={t('Instruments')}>{score.parts.map((a, i) => <button key={i} className={i === part ? 'active' : ''} onClick={() => { setPart(i); setSelected(0); }}>{a.name}</button>)}<button disabled={score.parts.length >= 8} onClick={() => { patch({ parts: [...score.parts, { name: `Part ${score.parts.length + 1}`, clef: 'treble', notes: [] }] }); setPart(score.parts.length); setSelected(0); }} aria-label={t('Add instrument')} title={t('Add instrument')}><Plus size={14}/></button></div>
@@ -217,12 +220,10 @@ export function MusicBlock({ block, root, onChange, onSource, onUndo, onMeasure 
       <p className="music-help">{t('Click the staff to add a note. Select notes to edit pitch, rhythm and lyrics. The TeX preview below shows final engraving.')}</p></>}
       {musicIssues(score).length > 0 && <p className="music-warning">{t('Incomplete measure')}: {musicIssues(score).join('; ')}</p>}
     </div>}
-    <div className="music-paper" tabIndex={0} role="button" aria-label={t('Edit score')} onClick={() => { setEditing(true); onMeasure(); }} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') {
+    <div className="music-paper" tabIndex={0} role="button" aria-label={t('Write music')} onClick={onSource} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        setEditing(true);
+        onSource();
     } }}><ScorePreview root={root} onSource={onSource} source={block.body} refresh={refresh} onMeasure={onMeasure}/></div>
-    {editing && <div className="music-inline-footer"><button onClick={() => setRefresh(x => x + 1)}><RefreshCw size={12}/>{t('Refresh preview')}</button><button onClick={() => setRaw(!raw)}><Code2 size={12}/>{t(raw ? 'Hide TeX' : 'Advanced TeX')}</button><span>{t('Rendered by TeX · source stays editable')}</span></div>}
-    {raw && <div className="music-raw"><p>{t('Custom TeX is preserved. Visual controls resume only when the source matches its saved music data.')}</p><textarea aria-label={t('Music TeX source')} value={draft} onChange={e => setDraft(e.target.value)} onBlur={() => { if (draft !== block.body)
-        onChange(`% TeXPro music begin ${block.id}\n${draft}\n% TeXPro music end ${block.id}`); }}/><button onClick={onSource}>{t('Edit in document source')}</button></div>}
+    {editing && <div className="music-inline-footer"><button onClick={() => setRefresh(x => x + 1)}><RefreshCw size={12}/>{t('Refresh preview')}</button><button onClick={onSource}><Code2 size={12}/>{t('Edit in document source')}</button></div>}
   </section>;
 }

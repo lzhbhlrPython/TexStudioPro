@@ -35,12 +35,14 @@ import {
   Tag,
 } from 'lucide-react';
 import type { AssetItem, FileNode, OutlineItem, Project, ProjectSymbols, SearchResult } from '../types';
+import { WritingNotes } from './WritingNotes';
+import type { WritingNote } from '../lib/writingNotes';
 import { snippetLibrary } from '../editor/completions';
 import { allSymbols, renderSymbolHtml, symbolModules, type SymbolItem } from '../lib/symbols';
 import { assetUrl, basename, dirname, extname, relativePath } from '../lib/latex';
 import { useI18n } from '../i18n';
 
-type SidebarTab = 'files' | 'outline' | 'assets' | 'symbols' | 'search';
+type SidebarTab = 'files' | 'outline' | 'assets' | 'symbols' | 'search' | 'notes';
 
 interface Props {
   project: Project | null;
@@ -52,6 +54,10 @@ interface Props {
   cursorLine: number;
   symbols: ProjectSymbols;
   assets: AssetItem[];
+  writingNotes: WritingNote[];
+  onOpenNote: (note: WritingNote) => void;
+  onToggleNote: (note: WritingNote) => void;
+  onInsertNote: () => void;
   onTabChange: (tab: SidebarTab) => void;
   onOpenFile: (path: string) => void;
   onRenameFile: (path: string) => void;
@@ -172,6 +178,10 @@ export function Sidebar({
   cursorLine,
   symbols,
   assets,
+  writingNotes,
+  onOpenNote,
+  onToggleNote,
+  onInsertNote,
   onTabChange,
   onOpenFile,
   onRenameFile,
@@ -301,6 +311,7 @@ export function Sidebar({
         <button className={tab === 'search' ? 'active' : ''} onClick={() => onTabChange('search')} title={t('Search project')} aria-label={t('Search project')}>
           <Search size={17} />
         </button>
+        <button className={tab === 'notes' ? 'active' : ''} data-testid="tab-notes" onClick={() => onTabChange('notes')} title={t('Writing notes')} aria-label={t('Writing notes')}><CheckSquare size={17} /></button>
         <div className="rail-spacer" />
         <button onClick={onOpenFolder} title={t('Open another project')} aria-label={t('Open another project')}>
           <Plus size={17} />
@@ -308,6 +319,7 @@ export function Sidebar({
       </nav>
 
       <div className="sidebar-panel">
+        {tab === 'notes' && <WritingNotes notes={writingNotes} onOpen={onOpenNote} onToggle={onToggleNote} onInsert={onInsertNote} />}
         {tab === 'files' && (
           <>
             <div className="panel-heading">

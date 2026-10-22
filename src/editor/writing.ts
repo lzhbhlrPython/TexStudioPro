@@ -3,6 +3,16 @@ import { EditorView } from '@codemirror/view';
 import { diagramBlocks, texEnvironments, type TexRange } from '../lib/texDocument';
 import { findMusicBlocks } from '../lib/music';
 
+export const composingWriting = StateEffect.define<boolean>();
+export const writingComposition = StateField.define<boolean>({
+  create: () => false,
+  update(value, tr) { for (const effect of tr.effects) if (effect.is(composingWriting)) value = effect.value; return value; },
+});
+export const stableWritingInput = [writingComposition, EditorView.domEventHandlers({
+  compositionstart(_event, view) { view.dispatch({ effects: composingWriting.of(true) }); return false; },
+  compositionend(_event, view) { queueMicrotask(() => { if (view.dom.isConnected) view.dispatch({ effects: composingWriting.of(false) }); }); return false; },
+})];
+
 export interface TableWriting extends TexRange { row: number; col: number }
 export const writeTableCell = StateEffect.define<TableWriting | null>();
 export const tableWritingField = StateField.define<TableWriting | null>({

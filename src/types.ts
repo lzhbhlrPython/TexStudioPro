@@ -69,6 +69,9 @@ export interface ProjectSymbols {
   environments: string[];
   packages: string[];
   images: Array<{ label: string; path: string; relative: string }>;
+  references?: Array<{ key: string; file: string; line: number; text: string }>;
+  bibliography?: Array<{ key: string; file: string; line: number; title: string; author: string; year: string }>;
+  writingNotes?: Array<{ file: string; line: number; text: string; done: boolean }>;
 }
 
 export type OutlineKind =

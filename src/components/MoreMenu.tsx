@@ -13,7 +13,7 @@ export interface MoreAction {
   run: () => void;
 }
 interface Props { open: boolean; actions: MoreAction[]; onClose: () => void }
-const groupOrder = ['File', 'Insert', 'Format', 'Project', 'Review', 'Tools', 'View', 'Build'];
+const groupOrder = ['File', 'Edit', 'Insert', 'Format', 'Project', 'Review', 'Tools', 'View', 'Build'];
 
 export function MoreMenu({ open, actions, onClose }: Props) {
   const { t, language } = useI18n();

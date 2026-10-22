@@ -117,7 +117,7 @@ module.exports = function installRegression(window, { app, ipcMain }) {
       await screenshot('circuit');
       await click('.schematic-studio .studio-header .icon-btn');
       await click('[data-testid="more-menu"]');
-      await input('.workbench-menu-search input', 'logic');
+      await input('.workbench-menu-search input', 'logic studio');
       assert.equal(await js(`document.querySelectorAll('.workbench-menu-list [data-action]').length`), 1);
       await click('[data-action="logic-studio"]');
       await waitFor(`Boolean(document.querySelector('[data-testid="logic-studio"] .schematic-node'))`);

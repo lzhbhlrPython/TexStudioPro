@@ -37,6 +37,7 @@ protocol.registerSchemesAsPrivileged([
       standard: true,
       secure: true,
       supportFetchAPI: true,
+      corsEnabled: true,
       stream: true,
     },
   },
@@ -73,6 +74,8 @@ const zhMenu = {
   'Template Library…': '模板库…', 'Template Workshop…': '模板工坊…',
   'Insert Music': '插入乐谱', 'Formula Editor…': '公式编辑器…', 'Display Equation': '独立公式', Table: '表格',
   'Visual Table Editor…': '可视化表格…', Figure: '图片', 'Code Block': '代码块',
+  Circuit: '电路', 'Logic Gates': '逻辑门', 'Chemical Structure': '化学结构式', 'Skeletal Formula': '键线式',
+  'TikZ Diagram': 'TikZ 图示', Chart: '图表', 'Visual Assistance': '可视化辅助',
   'Chart Studio…': '图表工作室…', 'Circuit Studio…': '电路工作室…',
   'Logic Studio…': '逻辑门工作室…', 'Structure Studio…': '结构式工作室…',
   'Ink Studio…': '手绘工作室…', 'TikZ Studio…': 'TikZ 工作室…', 'Page Layout…': '页面布局…',
@@ -157,20 +160,20 @@ function buildMenu() {
       label: 'Insert',
       submenu: [
         tool('Insert Music', 'music'),
-        tool('Formula Editor…', 'formula', 'CmdOrCtrl+Shift+E'),
         tool('Display Equation', 'equation'),
         { type: 'separator' },
         tool('Table', 'table'),
-        tool('Visual Table Editor…', 'table-editor'),
         tool('Figure', 'figure'),
         tool('Code Block', 'code'),
         { type: 'separator' },
-        tool('Chart Studio…', 'chart'),
-        tool('Circuit Studio…', 'circuit-studio'),
-        tool('Logic Studio…', 'logic-studio'),
-        tool('Structure Studio…', 'structure-studio'),
-        tool('Ink Studio…', 'ink'),
-        tool('TikZ Studio…', 'tikz'),
+        tool('Circuit', 'circuit'), tool('Logic Gates', 'logic'),
+        tool('Chemical Structure', 'structure'), tool('Skeletal Formula', 'skeletal'),
+        tool('TikZ Diagram', 'tikz-writing'), tool('Chart', 'chart-writing'),
+        { label: 'Visual Assistance', submenu: [
+          tool('Formula Editor…', 'formula', 'CmdOrCtrl+Shift+E'), tool('Visual Table Editor…', 'table-editor'),
+          tool('Chart Studio…', 'chart'), tool('Circuit Studio…', 'circuit-studio'), tool('Logic Studio…', 'logic-studio'),
+          tool('Structure Studio…', 'structure-studio'), tool('Ink Studio…', 'ink'), tool('TikZ Studio…', 'tikz'),
+        ] },
         tool('Page Layout…', 'layout'),
         tool('Packages & Document Class…', 'packages'),
         tool('Commands & Completions…', 'commands'),
@@ -347,7 +350,9 @@ function createWindow() {
   });
 
   if (isSmoke) {
-    if (process.env.TEXPRO_ASSETS_REGRESSION === '1') require('./assets-regression.cjs')(mainWindow, { app, ipcMain });
+    if (process.env.TEXPRO_CONTINUITY_REGRESSION === '1') require('./continuity-regression.cjs')(mainWindow, { app, ipcMain });
+    else if (process.env.TEXPRO_ASSETS_REGRESSION === '1') require('./assets-regression.cjs')(mainWindow, { app, ipcMain });
+    else if (process.env.TEXPRO_WRITING_REGRESSION === '1') require('./writing-regression.cjs')(mainWindow, { app, ipcMain });
     else if (process.env.TEXPRO_MUSIC_REGRESSION === '1') require('./music-regression.cjs')(mainWindow, { app, ipcMain });
     else if (process.env.TEXPRO_REGRESSION === '1') require('./regression.cjs')(mainWindow, { app, ipcMain });
     else require('./smoke.cjs')(mainWindow, { app, isSmokeWelcome });
@@ -628,6 +633,11 @@ function registerIpc() {
     if (typeof root !== 'string' || !isAllowed(root)) throw new Error('Project is not open');
     return tex.gitStatus(root);
   });
+  ipcMain.handle('git:read-file', async (_event, root, revision, file) => {
+    if (typeof root !== 'string' || !isAllowed(root)) throw new Error('Project is not open');
+    if (typeof file !== 'string' || !isAllowed(file)) throw new Error('File is outside the project');
+    return tex.gitReadFile(root, revision, file);
+  });
   ipcMain.handle('git:init', async (_event, root) => {
     if (typeof root !== 'string' || !isAllowed(root)) throw new Error('Project is not open');
     return tex.gitInit(root);
@@ -850,7 +860,12 @@ app.whenReady().then(() => {
       const file = url.searchParams.get('path');
       if (!file) return new Response('Missing path', { status: 400 });
       if (!isAllowed(file)) return new Response('Forbidden', { status: 403 });
-      return net.fetch(pathToFileURL(file).toString());
+      const response = await net.fetch(pathToFileURL(file).toString());
+      const headers = new Headers(response.headers);
+      // Only the local app renderer may read project artwork into a theme mask.
+      const rendererOrigin = isDev ? new URL(process.env.VITE_DEV_SERVER_URL).origin : 'null';
+      headers.set('Access-Control-Allow-Origin', rendererOrigin);
+      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
     } catch (error) {
       return new Response(String(error), { status: 500 });
     }

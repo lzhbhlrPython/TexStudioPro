@@ -10,7 +10,8 @@ module.exports = function installMusicRegression(window, {app, ipcMain}) {
   const input=async(selector,value)=>{await js(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.focus();Object.getOwnPropertyDescriptor(e instanceof HTMLSelectElement?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e instanceof HTMLSelectElement?'change':'input',{bubbles:true}));})()`);await pause();};
   const open=async id=>{await click('[data-testid="more-menu"]');await click(`[data-action="${id}"]`);};
   const shot=async name=>{await pause(250);const dir=process.env.TEXPRO_ARTIFACTS||path.join(app.getPath('userData'),'artifacts');fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,`music-${name}.png`),(await window.webContents.capturePage()).toPNG());};
-  const key=async keyCode=>{for(const type of ['keyDown','keyUp'])window.webContents.sendInputEvent({type,keyCode,modifiers:['meta']});await pause(150);};
+  const key=async(keyCode,modifiers=['meta'])=>{for(const type of ['keyDown','keyUp'])window.webContents.sendInputEvent({type,keyCode,modifiers});await pause(150);};
+  const notation=()=>click('.music-block-actions button[aria-label="Notation tools"], .music-block-actions button[aria-label="记谱辅助"]');
   window.webContents.once('did-finish-load',()=>{(async()=>{
     await wait(`!!document.querySelector('.cm-content')`);
     await js(`window.__musicErrors=[];addEventListener('error',e=>window.__musicErrors.push(e.message));addEventListener('unhandledrejection',e=>window.__musicErrors.push(String(e.reason)));`);
@@ -18,6 +19,7 @@ module.exports = function installMusicRegression(window, {app, ipcMain}) {
     const main=await js(`document.querySelector('.titlebar-main-file').title`);
     await js(`document.querySelector('.cm-content').focus()`);await key('Up');
     await open('music');
+    await key('Escape',[]);
     await wait(`!!document.querySelector('[data-testid="music-block"] canvas')`);
     await key('s');
     await pause(600);
@@ -27,7 +29,7 @@ module.exports = function installMusicRegression(window, {app, ipcMain}) {
     assert.equal(await js(`document.querySelectorAll('.music-inline-controls').length`),0);
     console.log('PASS inline score inserted after preamble and rendered by real TeX');
     await js(`document.querySelector('.cm-music-host').scrollIntoView({block:'start'})`);await shot('collapsed');
-    await click('.music-paper');
+    await notation();
     await input('.music-meta input','Inline writing study');
     await wait(`document.querySelectorAll('.music-note').length===8`);
     await click('.music-note-tools button');
@@ -48,9 +50,9 @@ module.exports = function installMusicRegression(window, {app, ipcMain}) {
     await js(`document.querySelector('.cm-music-host').scrollIntoView({block:'start'})`);await shot('narrow');
     assert.ok(await js(`(()=>{const r=document.querySelector('.cm-music-block').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth;})()`));
     await key('s');await pause(500);saved=fs.readFileSync(main,'utf8');assert.ok(saved.includes('Inline writing study'));
-    await click('.music-block-actions button[aria-label="Edit TeX source"], .music-block-actions button[aria-label="编辑 TeX 源码"]');
+    await click('.music-block-actions button[aria-label="Write music"], .music-block-actions button[aria-label="编写乐谱"]');
     await wait(`!document.querySelector('[data-testid="music-block"]')`);
-    assert.ok(await js(`document.querySelector('.cm-content').textContent.includes('texpro-music-data')`));
+    assert.ok(await js(`!!document.querySelector('.cm-music-data')`));
     await key('Down');await js(`document.querySelector('.cm-scroller').scrollTop=0`);await wait(`!!document.querySelector('[data-testid="music-block"]')`);
     console.log('PASS inline edits, native undo, source reveal and three themes at minimum window');
     // Inserting into a chapter adds dependencies to the project main file, then returns here.
@@ -60,7 +62,7 @@ module.exports = function installMusicRegression(window, {app, ipcMain}) {
     fs.writeFileSync(main,document);fs.writeFileSync(child,'A chapter remains part of the writing project.\n');
     await click('.welcome-project-row');await wait(`!!document.querySelector('.tree-file[title^="music-chapter.tex"]')`);
     await click('.tree-file[title^="music-chapter.tex"]');await wait(`document.querySelector('.titlebar-file-name').textContent==='music-chapter.tex'`);
-    await open('music');await wait(`!!document.querySelector('[data-testid="music-block"] canvas')`);
+    await open('music');await key('Escape',[]);await wait(`!!document.querySelector('[data-testid="music-block"] canvas')`);
     assert.equal(await js(`document.querySelector('.titlebar-file-name').textContent`),'music-chapter.tex');
     assert.equal(await js(`document.querySelector('.titlebar-main-file').title`),main);
     await open('close-project');await wait(`!!document.querySelector('[data-testid="welcome"]')`);
@@ -71,7 +73,7 @@ module.exports = function installMusicRegression(window, {app, ipcMain}) {
     await js(`document.querySelector('.cm-scroller').scrollTop=0`);await wait(`!!document.querySelector('[data-testid="music-block"]')`);
     console.log('PASS chapter insertion preserves main-file identity and saves both buffers on close');
     // A rejected TeX request stays local and never displays an old score as current.
-    await js(`document.querySelector('.cm-music-host').scrollIntoView({block:'start'})`);await click('.music-paper');
+    await js(`document.querySelector('.cm-music-host').scrollIntoView({block:'start'})`);await notation();
     const originalPreview=ipcMain._invokeHandlers.get('music:preview');
     ipcMain.removeHandler('music:preview');ipcMain.handle('music:preview',async()=>{throw new Error('Music preview unavailable (regression)');});
     await input('.music-meta input','Rejected preview');

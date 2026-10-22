@@ -1,3 +1,9 @@
+import { ensureTexPackages } from './lib/texDocument';
+import { writingNotes, type WritingNote } from './lib/writingNotes';
+import { figureWritingRange, writingFigure } from './lib/writingFigure';
+import { writingPackages, writingSnippets } from './lib/writingSnippets';
+import type { WritingTarget } from './editor/writingTargets';
+import type { WritingPosition, WritingSessions } from './editor/writingSession';
 import { musicBlock, newScore } from './lib/music';
 import { TemplateGallery, PgfplotsStudio, PluginMarket, PaperStudio, CrewPanel, CompileTheater, CommandStudio, PackageManager, GitPanel, InkStudio, SchematicStudio, BackupPanel, VersionReview, FontCoverage, ProjectGraph, ArxivPanel, McpPanel, AIAssistant, CommentsPanel, ExportStudio, ProjectDoctor, TableStudio, ImportStudio, TemplateWorkshop, ProjectStudio, BibManager, FormulaStudio, LayoutStudio, TikzStudio } from './app/lazyTools';
 import { SETTINGS_KEY, RECENT_KEY, loadSettings, loadRecent } from './app/settings';
@@ -203,6 +209,9 @@ export default function App() {
   const compileRunId = useRef<string | null>(null);
   const settingsRef = useRef(settings);
   const editorRef = useRef<EditorHandle | null>(null);
+  const writingSessions = useRef<WritingSessions>(new Map());
+  const writingTrail = useRef<WritingPosition[]>([]);
+  const compiledSources = useRef<Record<string, string>>({});
   const toastId = useRef(0);
   const openRequest = useRef(0);
   const autoCompileBase = useRef('');
@@ -325,14 +334,24 @@ export default function App() {
   }, [deferredContent, activePath, comments]);
 
   const effectiveSymbols = useMemo(
-    () => (activeDoc ? collectLocalSymbols(deferredContent, symbols) : symbols),
-    [deferredContent, symbols],
+    () => {
+      const indexed = Object.values(docs).reduce((all, doc) => collectLocalSymbols(doc.content, all, doc.path), symbols);
+      const images = new Map(indexed.images.map(image => [image.path, image]));
+      for (const asset of assets) images.set(asset.path, { ...asset, label: asset.name });
+      return { ...indexed, images: [...images.values()] };
+    },
+    [docs, symbols, assets],
   );
 
   const stats = useMemo(
     () => computeStats(deferredContent),
     [deferredContent],
   );
+
+  const notes = useMemo(() => [
+    ...(symbols.writingNotes || []).filter(note => !docs[note.file]),
+    ...Object.values(docs).flatMap(doc => /\.(tex|ltx)$/i.test(doc.path) ? writingNotes(doc.content, doc.path) : []),
+  ], [docs, symbols]);
 
   const bibFiles = useMemo(
     () => (project ? flattenFiles(project.tree).filter((node) => node.ext === '.bib').map((node) => node.path) : []),
@@ -391,6 +410,7 @@ export default function App() {
       }
       if (path !== activePathRef.current) setSyncTarget(null);
       const requestId = ++openRequest.current;
+      setGotoRequest(null);
       setPreviewFile(null);
       setActivePath(path);
       if (!docsRef.current[path]) {
@@ -413,7 +433,7 @@ export default function App() {
           if (requestId === openRequest.current) setOpeningFile(null);
         }
       }
-      if (line) setGotoRequest({ line, key: Date.now() });
+      if (line) setGotoRequest({ file: path, line, key: Date.now() });
     },
     [pushToast],
   );
@@ -465,8 +485,12 @@ export default function App() {
 
   const saveActive = useCallback(async () => {
     const path = activePathRef.current;
-    if (path) await saveDoc(path, true);
-  }, [saveDoc]);
+    const dirty = Object.values(docsRef.current).some(doc => doc.dirty);
+    if (!(await saveAll())) return;
+    pushToast(tr(dirty ? 'Saved' : 'No changes to save'), dirty ? 'success' : 'info', path?.split('/').pop());
+    const current = projectRef.current;
+    if (dirty && current && !gitManagedRef.current) void window.texpro.historyCommit(current.root, 'save');
+  }, [saveAll, pushToast]);
 
 
   const loadProject = useCallback(
@@ -484,6 +508,7 @@ export default function App() {
       openRequest.current++;
       activePathRef.current = null;
       projectRef.current = next;
+      writingSessions.current = new Map(); writingTrail.current = []; compiledSources.current = {};
       setProject(next);
       setDocs({});
       docsRef.current = {};
@@ -733,6 +758,7 @@ export default function App() {
         pushToast(tr('Choose main file'), 'error', compileProject.rootError || undefined);
         return;
       }
+      const sourceSnapshot = Object.fromEntries(Object.values(docsRef.current).map(doc => [doc.path, doc.content]));
       const result = await window.texpro.compile({
         projectRoot: currentProject.root,
         activeFile: currentFile,
@@ -743,6 +769,7 @@ export default function App() {
       });
       if (generation !== projectGeneration.current || compileRunId.current !== runId) return;
       setCompileResult(result);
+      compiledSources.current = sourceSnapshot;
       setDiagnostics(result.diagnostics || []);
       if (result.cancelled) {
         setStatus(tr('Compilation cancelled'));
@@ -789,6 +816,7 @@ export default function App() {
       projectGeneration.current++; syncGeneration.current++; inverseGeneration.current++; navigationGeneration.current++; openRequest.current++;
       compileRunId.current = null; compilingRef.current = false; setCompiling(false);
       projectRef.current = null; setProject(null);
+      writingSessions.current = new Map(); writingTrail.current = []; compiledSources.current = {};
       docsRef.current = {}; setDocs({}); activePathRef.current = null; setActivePath(null); setOpeningFile(null);
       pdfPathRef.current = null; pdfBytesRef.current = null; setPdfPath(null); setPdfBytes(null); setPreviousPdfBytes(null);
       setPreviewFile(null); setOutline([]); setSymbols(emptySymbols); setAssets([]); setComments([]); setGotoRequest(null);
@@ -959,6 +987,8 @@ export default function App() {
 
   const gotoLocation = useCallback(
     async (file: string | undefined, line: number, column?: number, flash = false, endLine?: number, select = false) => {
+      const origin = editorRef.current?.getPosition();
+      if (origin) { writingTrail.current.push(origin); writingTrail.current = writingTrail.current.slice(-80); }
       const navigation = ++navigationGeneration.current;
       if (file && normalizeFile(file) !== normalizeFile(activePathRef.current || '')) {
         await openFile(normalizeFile(file));
@@ -967,6 +997,38 @@ export default function App() {
     },
     [openFile],
   );
+
+  const returnToWriting = useCallback(async () => {
+    const point = writingTrail.current.pop(); if (!point) return;
+    const generation = projectGeneration.current;
+    await openFile(point.file);
+    for (let frame = 0; frame < 30 && editorRef.current?.getPath() !== point.file; frame++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    if (generation === projectGeneration.current && editorRef.current?.getPath() === point.file) editorRef.current.restorePosition(point);
+  }, [openFile]);
+
+  useEffect(() => {
+    const back = (event: KeyboardEvent) => { if ((event.metaKey || event.ctrlKey) && event.altKey && event.key === 'ArrowLeft') { event.preventDefault(); void returnToWriting(); } };
+    window.addEventListener('keydown', back);
+    return () => window.removeEventListener('keydown', back);
+  }, [returnToWriting]);
+
+  useEffect(() => {
+    const jump = (event: Event) => {
+      const target = (event as CustomEvent<{ file: string; line: number }>).detail;
+      const root = projectRef.current?.root;
+      if (root && target?.file.startsWith(root + '/')) void gotoLocation(target.file, target.line, 1, true);
+    };
+    window.addEventListener('texpro:writing-jump', jump);
+    return () => window.removeEventListener('texpro:writing-jump', jump);
+  }, [gotoLocation]);
+
+  const toggleNote = useCallback(async (note: WritingNote) => {
+    const generation = projectGeneration.current;
+    await gotoLocation(note.file, note.line);
+    for (let frame = 0; frame < 30 && editorRef.current?.getPath() !== note.file; frame++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    if (generation !== projectGeneration.current || editorRef.current?.getPath() !== note.file) return;
+    if (!editorRef.current.toggleNote(note)) { pushToast(tr('Note moved. Refreshing its location.'), 'info'); void refreshProjectData(); }
+  }, [gotoLocation, pushToast, refreshProjectData]);
 
   const handleDiagnosticClick = useCallback(
     (diagnostic: Diagnostic) => {
@@ -1096,33 +1158,6 @@ export default function App() {
     [pushToast, refreshProjectData, t],
   );
 
-  const handleInsertAsset = useCallback(
-    async (asset: AssetItem) => {
-      const doc = activePathRef.current;
-      const currentProject = projectRef.current;
-      if (!doc || !currentProject) {
-        pushToast(t('Open a document first'), 'info');
-        return;
-      }
-      let path = asset.path;
-      let name = asset.name;
-      if (asset.ext === '.svg') {
-        try {
-          const raster = await window.texpro.rasterizeSvg(currentProject.root, asset.path);
-          path = raster.path;
-          name = raster.name;
-        } catch (error) {
-          pushToast(tr('Could not convert SVG for LaTeX'), 'error', String(error));
-          return;
-        }
-      }
-      const relative = relativePath(dirname(doc), path);
-      editorRef.current?.ensurePackage('graphicx');
-      editorRef.current?.insert(`\\includegraphics[width=0.8\\linewidth]{${relative}}`);
-      pushToast(t('Inserted into document'), 'success', name);
-    },
-    [pushToast, t],
-  );
 
   const handleCreateFromTemplate = useCallback(
     async (template: TemplateItem, meta: TemplateMeta) => {
@@ -1172,19 +1207,6 @@ export default function App() {
     [pushToast, t],
   );
 
-  const insertGenerated = useCallback(
-    (code: string, needsPgfplots: boolean, message: string) => {
-      if (!activePathRef.current) {
-        pushToast(t('Open a document first'), 'info');
-        return;
-      }
-      editorRef.current?.ensurePackage('tikz');
-      if (needsPgfplots) editorRef.current?.ensurePackage('pgfplots');
-      editorRef.current?.insert(code);
-      pushToast(message, 'success');
-    },
-    [pushToast, t],
-  );
 
   const handleRecent = useCallback(
     async (entry: RecentProject) => {
@@ -1423,54 +1445,7 @@ export default function App() {
     [openFile],
   );
 
-  const handleInsertImagePath = useCallback(
-    (path: string) => {
-      const doc = activePathRef.current;
-      if (!doc) {
-        pushToast(tr('Open a document first'), 'info');
-        return;
-      }
-      editorRef.current?.ensurePackage('graphicx');
-      editorRef.current?.insert(`\\includegraphics[width=0.8\\linewidth]{${relativePath(dirname(doc), path)}}`);
-      pushToast(tr('Inserted into document'), 'success', path.split('/').pop());
-    },
-    [pushToast],
-  );
 
-  const handleImageFiles = useCallback(
-    async (files: File[]) => {
-      const currentProject = projectRef.current;
-      const doc = activePathRef.current;
-      if (!currentProject || !doc) {
-        pushToast(tr('Open a document first'), 'info');
-        return;
-      }
-      const images = files.filter((file) => file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(file.name));
-      if (!images.length) {
-        pushToast(tr('Only image files can be dropped here'), 'info');
-        return;
-      }
-      editorRef.current?.ensurePackage('graphicx');
-      for (const file of images) {
-        try {
-          const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
-          const asset = await window.texpro.saveImageBuffer(
-            currentProject.root,
-            projectConfigRef.current.directories.assets,
-            { name: file.name || 'pasted-image', ext, data: new Uint8Array(await file.arrayBuffer()) },
-          );
-          let usable = asset;
-          if (asset.ext === '.svg') usable = await window.texpro.rasterizeSvg(currentProject.root, asset.path);
-          setAssets((current) => (current.some((item) => item.path === usable.path) ? current : [...current, usable]));
-          editorRef.current?.insert(`\\includegraphics[width=0.8\\linewidth]{${relativePath(dirname(doc), usable.path)}}\n`);
-        } catch (error) {
-          pushToast(tr('Could not save image'), 'error', String(error));
-        }
-      }
-      pushToast(tr('Image added to assets'), 'success', images.length > 1 ? `${images.length} files` : images[0].name);
-    },
-    [pushToast],
-  );
 
   const handleSearchResult = useCallback(
     (result: SearchResult) => {
@@ -1479,22 +1454,116 @@ export default function App() {
     [openFile],
   );
 
+
+  const ensureWritingPackages = useCallback(async (packages: string[]) => {
+    if (!packages.length) return true;
+    const current = projectRef.current, generation = projectGeneration.current;
+    if (!current?.rootFile) { pushToast(tr('Choose main file'), 'error'); return false; }
+    if (editorRef.current?.getPath() === current.rootFile) { editorRef.current.ensurePackages(packages); return true; }
+    try {
+      const saved = docsRef.current[current.rootFile]?.savedContent ?? await window.texpro.readFile(current.rootFile);
+      if (generation !== projectGeneration.current || projectRef.current?.rootFile !== current.rootFile) return false;
+      setDocs(latest => {
+        const doc = latest[current.rootFile!] || { path: current.rootFile!, content: saved, savedContent: saved, dirty: false };
+        const content = ensureTexPackages(doc.content, packages);
+        const next = { ...latest, [current.rootFile!]: { ...doc, content, dirty: content !== doc.savedContent } };
+        docsRef.current = next;
+        return next;
+      });
+      return true;
+    } catch (error) { pushToast(tr('Could not open file'), 'error', String(error)); return false; }
+  }, [pushToast]);
+
+  const writeAtCaret = useCallback(async (text: string, packages: string[] = writingPackages(text), cursor = text.length) => {
+    const editor = editorRef.current;
+    if (!editor) { pushToast(tr('Open a document first'), 'info'); return; }
+    const generation = projectGeneration.current;
+    let range = editor.getSelectionRange();
+    if (editor.getPath() === projectRef.current?.rootFile) {
+      const body = /\\begin\s*\{document\}/.exec(editor.getContent());
+      if (body && range.from < body.index + body[0].length) range = { from: body.index + body[0].length, to: body.index + body[0].length };
+    }
+    const target = editor.captureWriting(range);
+    if (!target || !(await ensureWritingPackages(packages))) return;
+    if (generation !== projectGeneration.current || editorRef.current !== editor) return;
+    if (!editor.applyWriting(target, text, cursor)) pushToast(tr('Writing target changed. Reopen the helper at the intended location.'), 'info');
+  }, [ensureWritingPackages, pushToast]);
+
+  const insertImageFiles = useCallback(async (input: Array<File | AssetItem>) => {
+    const editor = editorRef.current, current = projectRef.current;
+    if (!editor || !current) { pushToast(tr('Open a document first'), 'info'); return; }
+    const generation = projectGeneration.current;
+    const range = figureWritingRange(editor.getContent(), editor.getSelectionRange(), editor.getPath() === current.rootFile);
+    const target = editor.captureWriting(range);
+    if (!target || !(await ensureWritingPackages(['graphicx']))) return;
+    const labels = new Set(effectiveSymbols.labels);
+    const figures: Array<ReturnType<typeof writingFigure>> = [];
+    for (const item of input) {
+      try {
+        let asset: AssetItem;
+        if (item instanceof File) {
+          const ext = (item.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+          asset = await window.texpro.saveImageBuffer(current.root, projectConfigRef.current.directories.assets, { name: item.name || 'pasted-image', ext, data: new Uint8Array(await item.arrayBuffer()) });
+        } else asset = item;
+        if (asset.ext === '.svg') asset = await window.texpro.rasterizeSvg(current.root, asset.path);
+        const figure = writingFigure(relativePath(dirname(target.file), asset.path), asset.name, labels);
+        labels.add(figure.label); figures.push(figure);
+      } catch (error) { pushToast(tr('Could not save image'), 'error', String(error)); }
+    }
+    if (generation !== projectGeneration.current || editorRef.current !== editor) return;
+    await refreshProjectData();
+    if (!figures.length || generation !== projectGeneration.current || editorRef.current !== editor) return;
+    if (!editor.applyWriting(target, figures.map(figure => figure.source).join(''), figures[0].cursor)) {
+      pushToast(tr('Image saved to the asset library. Choose a new insertion point.'), 'info'); return;
+    }
+    pushToast(tr('Image added to assets'), 'success');
+  }, [effectiveSymbols.labels, ensureWritingPackages, pushToast, refreshProjectData]);
+
+  const handleInsertAsset = useCallback(async (asset: AssetItem) => { await insertImageFiles([asset]); }, [insertImageFiles]);
+  const handleImageFiles = useCallback(async (files: File[]) => {
+    const images = files.filter(file => file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(file.name));
+    if (!images.length) { pushToast(tr('Only image files can be dropped here'), 'info'); return; }
+    await insertImageFiles(images);
+  }, [insertImageFiles, pushToast]);
+  const handleInsertImagePath = useCallback((path: string) => {
+    const asset = assetsRef.current.find(item => item.path === path);
+    if (asset) void insertImageFiles([asset]);
+  }, [insertImageFiles]);
+
+  const insert = useCallback((template: string) => {
+    const marker = template.indexOf('|');
+    const text = marker < 0 ? template : template.slice(0, marker) + template.slice(marker + 1);
+    void writeAtCaret(text, writingPackages(text), marker < 0 ? text.length : marker);
+  }, [writeAtCaret]);
+
+
+  const helperTargets = useRef<Record<string, { editor: EditorHandle; target: WritingTarget; generation: number }>>({});
+  const beginWritingHelper = useCallback((kind: string, range?: { from: number; to: number }) => {
+    const editor = editorRef.current, target = editor?.captureWriting(range);
+    if (!editor || !target) { pushToast(tr('Open a document first'), 'info'); return false; }
+    helperTargets.current[kind] = { editor, target, generation: projectGeneration.current };
+    return true;
+  }, [pushToast]);
+  const closeWritingHelper = useCallback((kind: string) => {
+    const session = helperTargets.current[kind]; delete helperTargets.current[kind];
+    if (session && session.generation === projectGeneration.current && editorRef.current === session.editor) session.editor.restoreWriting(session.target);
+  }, []);
+  const applyWritingHelper = useCallback(async (kind: string, code: string, packages = writingPackages(code)) => {
+    const session = helperTargets.current[kind]; delete helperTargets.current[kind];
+    if (!session || session.generation !== projectGeneration.current || editorRef.current !== session.editor) {
+      pushToast(tr('Writing target changed. Reopen the helper at the intended location.'), 'info'); return;
+    }
+    if (!(await ensureWritingPackages(packages))) return;
+    if (session.generation !== projectGeneration.current || editorRef.current !== session.editor || !session.editor.applyWriting(session.target, code)) {
+      pushToast(tr('Writing target changed. Reopen the helper at the intended location.'), 'info');
+    }
+  }, [ensureWritingPackages, pushToast]);
   const openFormula = useCallback(() => {
+    if (!beginWritingHelper('formula')) return;
     const selected = editorRef.current?.getSelection() || '';
     setFormulaSeed(selected.replace(/^\$+|\$+$/g, '').replace(/^\\\[|\\\]$/g, '').trim());
     setFormulaOpen(true);
-  }, []);
-
-  const insert = useCallback(
-    (text: string) => {
-      if (!activeDoc) {
-        pushToast(tr('Open a document first'), 'info');
-        return;
-      }
-      editorRef.current?.insert(text);
-    },
-    [activeDoc, pushToast],
-  );
+  }, [beginWritingHelper]);
 
   const handleInsertCite = useCallback(
     (key: string) => {
@@ -1651,29 +1720,10 @@ export default function App() {
     }
   }, [editMainFile, pushToast]);
 
-  const handleInsertMusic = useCallback(async () => {
-    const target = activePathRef.current;
-    const currentProject = projectRef.current;
-    if (!target || !currentProject?.rootFile || !editorRef.current) return;
-    const generation = projectGeneration.current;
-    const range = editorRef.current.getSelectionRange();
-    const before = docsRef.current[target]?.content;
-    if (!(await editMainFile(editor => { editor.ensurePackage('musixtex'); editor.ensurePackage('tikz'); }))) return;
-    if (generation !== projectGeneration.current) return;
-    if (target !== currentProject.rootFile) {
-      await openFile(target);
-      for (let frame = 0; frame < 30 && editorRef.current?.getPath() !== target; frame++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-      if (generation !== projectGeneration.current || editorRef.current?.getPath() !== target || docsRef.current[target]?.content !== before) return;
-    }
-    let insertion = target !== currentProject.rootFile ? range : editorRef.current?.getSelectionRange();
-    if (target === currentProject.rootFile && insertion) {
-      const text = editorRef.current?.getContent() || '';
-      const body = /\\begin\s*\{document\}/.exec(text);
-      if (body && insertion.from < body.index + body[0].length) insertion = { from: body.index + body[0].length, to: body.index + body[0].length };
-    }
-    editorRef.current?.insertLiteral('\n' + musicBlock(newScore()) + '\n\n', insertion);
-    setSettings(current => ({ ...current, visual: true }));
-  }, [editMainFile, openFile]);
+  const handleInsertMusic = useCallback(() => {
+    const source = '\n' + musicBlock(newScore()) + '\n\n';
+    void writeAtCaret(source, ['musixtex', 'tikz'], source.indexOf('\\Notes'));
+  }, [writeAtCaret]);
 
   const handleApplyLayout = useCallback(async (layout: LayoutResult) => {
     if (await editMainFile(editor => editor.applyLayout(layout))) {
@@ -1718,23 +1768,16 @@ export default function App() {
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ source?: string }>).detail;
-      setTikzSource(detail?.source || null);
+      const detail = (event as CustomEvent<{ source?: string; from?: number; to?: number; file?: string }>).detail;
+      if (!detail?.source || detail.file !== activePathRef.current || detail.from === undefined || detail.to === undefined) return;
+      if (!beginWritingHelper('tikz', { from: detail.from, to: detail.to })) return;
+      setTikzSource(detail.source);
       setTikzOpen(true);
     };
     window.addEventListener('texpro:open-tikz', handler);
     return () => window.removeEventListener('texpro:open-tikz', handler);
-  }, []);
+  }, [beginWritingHelper]);
 
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ source?: string; focusPos?: number }>).detail;
-      if (!detail?.source) return;
-      setTableRequest({ source: detail.source, focusPos: Number(detail.focusPos || 0), insert: false });
-    };
-    window.addEventListener('texpro:open-table', handler);
-    return () => window.removeEventListener('texpro:open-table', handler);
-  }, []);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -1936,19 +1979,19 @@ export default function App() {
         id: 'chart',
         label: t('Open chart studio'),
         detail: 'Edit CSV data, preview native pgfplots and insert LaTeX',
-        group: 'Insert',
+        group: 'Tools',
         icon: BarChart3,
-        run: () => setChartOpen(true),
+        run: () => { if (beginWritingHelper('chart')) setChartOpen(true); },
       },
       {
         id: 'tikz',
         label: t('Open TikZ studio'),
         detail: 'Live TikZ preview with the current document preamble',
-        group: 'Insert',
+        group: 'Tools',
         icon: PenTool,
         run: () => {
           setTikzSource(null);
-          setTikzOpen(true);
+          if (beginWritingHelper('tikz')) setTikzOpen(true);
         },
       },
       {
@@ -1987,7 +2030,7 @@ export default function App() {
         id: 'formula',
         label: 'Formula editor',
         detail: 'Compose KaTeX math and insert LaTeX',
-        group: 'Insert',
+        group: 'Tools',
         icon: Sigma,
         run: openFormula,
       },
@@ -2027,6 +2070,7 @@ export default function App() {
         run: () => insert(snippetLibrary.find((item) => item.id === 'equation')?.template || ''),
       },
       { id: 'music', label: t('Insert music'), group: 'Insert', icon: Music2, run: () => void handleInsertMusic() },
+      ...writingSnippets.map(item => ({ id: item.id, label: t(item.label), group: 'Insert', icon: item.id === 'circuit' ? CircuitBoard : item.id === 'logic' ? GitBranch : item.id === 'structure' || item.id === 'skeletal' ? FlaskConical : PenTool, run: () => void writeAtCaret('\n' + item.text + '\n\n', item.packages, item.cursor + 1) })),
       {
         id: 'insert-table',
         label: t('Insert table'),
@@ -2113,6 +2157,8 @@ export default function App() {
       project,
       handleCloseProject,
       handleInsertMusic,
+      writeAtCaret,
+      beginWritingHelper,
       editMainFile,
       settings.visual,
       settings.focus,
@@ -2140,22 +2186,29 @@ export default function App() {
   const moreActions: MoreAction[] = useMemo(
     () => [
       { id: 'close-project', label: 'Close project and return to Welcome', group: 'File', icon: FolderOpen, run: () => void handleCloseProject() },
+      { id: 'review-writing', label: 'Review in writing', group: 'Tools', icon: History, run: () => editorRef.current?.toggleReview() },
+      { id: 'return-writing', label: 'Back to writing position', group: 'Edit', icon: BookOpen, run: () => void returnToWriting() },
+      { id: 'writing-note', label: 'Leave a writing note', group: 'Insert', icon: MessageSquare, run: () => { editorRef.current?.leaveNote(); } },
+      { id: 'writing-notes', label: 'Writing notes', group: 'Tools', icon: List, run: () => { setSidebarOpen(true); setSidebarTab('notes'); } },
+      { id: 'move-content-up', label: 'Move content up', group: 'Edit', icon: List, run: () => { if (!editorRef.current?.moveContent(-1)) pushToast(tr('No complete neighboring content to move.'), 'info'); } },
+      { id: 'move-content-down', label: 'Move content down', group: 'Edit', icon: List, run: () => { if (!editorRef.current?.moveContent(1)) pushToast(tr('No complete neighboring content to move.'), 'info'); } },
       { id: 'music', label: 'Insert music', group: 'Insert', icon: Music2, run: () => void handleInsertMusic() },
-      { id: 'formula', label: 'Formula editor', group: 'Insert', icon: Sigma, run: openFormula },
+      ...writingSnippets.map(item => ({ id: item.id, label: item.label, group: 'Insert', icon: item.id === 'circuit' ? CircuitBoard : item.id === 'logic' ? GitBranch : item.id === 'structure' || item.id === 'skeletal' ? FlaskConical : PenTool, run: () => void writeAtCaret('\n' + item.text + '\n\n', item.packages, item.cursor + 1) })),
+      { id: 'formula', label: 'Formula editor', group: 'Tools', icon: Sigma, run: openFormula },
       { id: 'import', label: 'Import Markdown / Typst', group: 'File', icon: FileInput, run: () => setImportOpen(true) },
       { id: 'equation', label: 'Insert display equation', group: 'Insert', icon: Sigma, run: () => insert(snippetLibrary.find((item) => item.id === 'equation')?.template || '') },
       { id: 'table', label: 'Insert table', group: 'Insert', icon: Table2, run: () => insert(snippetLibrary.find((item) => item.id === 'table')?.template || '') },
-      { id: 'table-editor', label: 'Visual table editor', group: 'Insert', icon: Table2, run: () => setTableRequest({ source: '', focusPos: 0, insert: true }) },
+      { id: 'table-editor', label: 'Visual table editor', group: 'Tools', icon: Table2, run: () => beginWritingHelper('table') && setTableRequest({ source: editorRef.current?.getSelection() || '', focusPos: 0, insert: true }) },
       { id: 'figure', label: 'Insert figure', group: 'Insert', icon: Image, run: () => insert(snippetLibrary.find((item) => item.id === 'figure')?.template || '') },
       { id: 'code', label: 'Insert code block', group: 'Insert', icon: Code2, run: () => insert(snippetLibrary.find((item) => item.id === 'code')?.template || '') },
-      { id: 'chart', label: 'Chart studio', group: 'Insert', icon: BarChart3, run: () => setChartOpen(true) },
-      { id: 'circuit-studio', label: 'Circuit studio', group: 'Insert', icon: CircuitBoard, run: () => setSchematicMode('circuit') },
-      { id: 'logic-studio', label: 'Logic studio', group: 'Insert', icon: GitBranch, run: () => setSchematicMode('logic') },
-      { id: 'structure-studio', label: 'Structure studio', group: 'Insert', icon: FlaskConical, run: () => setSchematicMode('structure') },
-      { id: 'ink', label: 'Ink studio', group: 'Insert', icon: PenTool, run: () => setInkOpen(true) },
+      { id: 'chart', label: 'Chart studio', group: 'Tools', icon: BarChart3, run: () => { if (beginWritingHelper('chart')) setChartOpen(true); } },
+      { id: 'circuit-studio', label: 'Circuit studio', group: 'Tools', icon: CircuitBoard, run: () => beginWritingHelper('schematic') && setSchematicMode('circuit') },
+      { id: 'logic-studio', label: 'Logic studio', group: 'Tools', icon: GitBranch, run: () => beginWritingHelper('schematic') && setSchematicMode('logic') },
+      { id: 'structure-studio', label: 'Structure studio', group: 'Tools', icon: FlaskConical, run: () => beginWritingHelper('schematic') && setSchematicMode('structure') },
+      { id: 'ink', label: 'Ink studio', group: 'Tools', icon: PenTool, run: () => beginWritingHelper('ink') && setInkOpen(true) },
       { id: 'collab', label: 'LAN collaboration', group: 'Tools', icon: Network, run: () => setCollabOpen(true) },
       { id: 'git', label: 'Version control', group: 'Tools', icon: GitBranch, run: () => setGitOpen(true) },
-      { id: 'tikz', label: 'TikZ studio', group: 'Insert', icon: PenTool, run: () => { setTikzSource(null); setTikzOpen(true); } },
+      { id: 'tikz', label: 'TikZ studio', group: 'Tools', icon: PenTool, run: () => { setTikzSource(null); if (beginWritingHelper('tikz')) setTikzOpen(true); } },
       { id: 'layout', label: 'Page layout', group: 'Insert', icon: Columns3, run: () => void editMainFile(() => setLayoutOpen(true)) },
       { id: 'packages', label: 'Packages & document class', group: 'Project', icon: Package, run: () => void editMainFile(() => setPackageOpen(true)) },
       { id: 'commands', label: 'Commands & completions', group: 'Project', icon: Terminal, run: () => setCommandOpen(true) },
@@ -2190,7 +2243,7 @@ export default function App() {
       { id: 'settings', label: 'Settings', group: 'Tools', icon: Settings2, run: () => setSettingsOpen(true) },
       { id: 'palette', label: 'Command palette', group: 'Tools', shortcut: '⌘K', icon: Command, run: () => setPaletteOpen(true) },
     ],
-    [handleInsertMusic, editMainFile, handleCloseProject, settings.visual, settings.focus, settings.typewriter, settings.theme, openFormula, insert, toggleVisual, toggleFocus, toggleTypewriter, toggleDayNight, handleOpenFolder, saveActive, runCompile, manualForwardSync, t],
+    [returnToWriting, beginWritingHelper, writeAtCaret, handleInsertMusic, editMainFile, handleCloseProject, settings.visual, settings.focus, settings.typewriter, settings.theme, openFormula, insert, toggleVisual, toggleFocus, toggleTypewriter, toggleDayNight, handleOpenFolder, saveActive, runCompile, manualForwardSync, t],
   );
 
   moreActionsRef.current = moreActions;
@@ -2245,6 +2298,10 @@ export default function App() {
               cursorLine={cursor.line}
               symbols={effectiveSymbols}
               assets={assets}
+              writingNotes={notes}
+              onOpenNote={note => void gotoLocation(note.file, note.line, 1, true)}
+              onToggleNote={note => void toggleNote(note)}
+              onInsertNote={() => editorRef.current?.leaveNote()}
               onTabChange={setSidebarTab}
               onOpenFile={handleOpenFile}
               onRenameFile={(path) => void handleRenameFile(path)}
@@ -2286,7 +2343,11 @@ export default function App() {
                   ref={editorRef}
                   path={activeDoc.path}
                   value={activeDoc.content}
+                  savedContent={activeDoc.savedContent}
+                  sessions={writingSessions.current}
+                  diagnosticsStale={Boolean(compileResult && compiledSources.current[activeDoc.path] !== activeDoc.content)}
                   root={project.root}
+                  mainText={project.rootFile ? docs[project.rootFile]?.content : undefined}
                   settings={settings}
                   symbols={effectiveSymbols}
                   diagnostics={activeDiagnostics}
@@ -2381,12 +2442,12 @@ export default function App() {
         }}
         onOpenChart={() => {
           setSettingsOpen(false);
-          setChartOpen(true);
+          if (beginWritingHelper('chart')) setChartOpen(true);
         }}
         onOpenTikz={() => {
           setSettingsOpen(false);
           setTikzSource(null);
-          setTikzOpen(true);
+          if (beginWritingHelper('tikz')) setTikzOpen(true);
         }}
       />
       <TemplateGallery
@@ -2404,8 +2465,8 @@ export default function App() {
         open={chartOpen}
         projectRoot={project?.root || null}
         filePath={activePath}
-        onClose={() => setChartOpen(false)}
-        onInsert={(code) => insertGenerated(code, true, t('Chart inserted'))}
+        onClose={() => { setChartOpen(false); closeWritingHelper('chart'); }}
+        onInsert={(code) => void applyWritingHelper('chart', code, ['tikz', 'pgfplots'])}
       />
       <PluginMarket
         open={pluginOpen}
@@ -2487,24 +2548,16 @@ export default function App() {
         projectRoot={project?.root || null}
         activeFile={activePath}
         assetsDir={projectConfig.directories.assets}
-        onClose={() => setInkOpen(false)}
-        onInsert={(text) => {
-          editorRef.current?.ensurePackage('graphicx');
-          editorRef.current?.insert(text);
-          pushToast(tr('Ink inserted'), 'success');
-        }}
+        onClose={() => { setInkOpen(false); closeWritingHelper('ink'); }}
+        onInsert={(text) => void applyWritingHelper('ink', text, ['graphicx'])}
       />
       <SchematicStudio
         open={schematicMode !== null}
         mode={schematicMode || 'circuit'}
         projectRoot={project?.root || null}
         filePath={activePath}
-        onClose={() => setSchematicMode(null)}
-        onInsert={(code, packageName) => {
-          editorRef.current?.ensurePackage(packageName);
-          editorRef.current?.insert(code);
-          pushToast(tr('Diagram inserted'), 'success', packageName);
-        }}
+        onClose={() => { setSchematicMode(null); closeWritingHelper('schematic'); }}
+        onInsert={(code, packageName) => void applyWritingHelper('schematic', code, [packageName])}
       />
       <BackupPanel
         open={backupOpen}
@@ -2615,21 +2668,10 @@ export default function App() {
       <TableStudio
         open={Boolean(tableRequest)}
         source={tableRequest?.source || ''}
-        onClose={() => setTableRequest(null)}
+        onClose={() => { setTableRequest(null); closeWritingHelper('table'); }}
         onApply={(code, useBooktabs) => {
-          if (!tableRequest) return;
-          if (useBooktabs) editorRef.current?.ensurePackage('booktabs');
-          if (tableRequest.insert) {
-            editorRef.current?.insert(code);
-          } else {
-            editorRef.current?.replaceRange(
-              Math.max(0, tableRequest.focusPos - 1),
-              Math.max(0, tableRequest.focusPos - 1 + tableRequest.source.length),
-              code,
-            );
-          }
+          void applyWritingHelper('table', code, useBooktabs ? ['booktabs'] : []);
           setTableRequest(null);
-          pushToast(tr('Table applied'), 'success');
         }}
       />
       <ImportStudio
@@ -2683,8 +2725,8 @@ export default function App() {
       <FormulaStudio
         open={formulaOpen}
         initialLatex={formulaSeed}
-        onClose={() => setFormulaOpen(false)}
-        onInsert={(code) => insert(code)}
+        onClose={() => { setFormulaOpen(false); closeWritingHelper('formula'); }}
+        onInsert={(code) => void applyWritingHelper('formula', code)}
       />
       <LayoutStudio
         open={layoutOpen}
@@ -2697,8 +2739,8 @@ export default function App() {
         projectRoot={project?.root || null}
         filePath={activePath}
         initialSource={tikzSource}
-        onClose={() => setTikzOpen(false)}
-        onInsert={(source) => insertGenerated(source, source.includes('\\begin{axis}'), t('Diagram inserted'))}
+        onClose={() => { setTikzOpen(false); closeWritingHelper('tikz'); }}
+        onInsert={(source) => void applyWritingHelper('tikz', source)}
       />
       {collabExtension && !collabOpen && (
         <button className="collab-live-pill" onClick={() => setCollabOpen(true)} title={t('Open writing room')}>
