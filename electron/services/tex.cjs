@@ -561,7 +561,7 @@ function deleteAsset(projectRoot, file) {
   if (!resolved.startsWith(root + path.sep)) throw new Error('Asset is outside the project');
   const ext = path.extname(resolved).toLowerCase();
   if (!ASSET_EXTENSIONS.has(ext)) throw new Error('Not an asset file');
-  fs.unlinkSync(resolved);
+  deleteProjectFile(root, resolved);
   return collectAssets(root);
 }
 

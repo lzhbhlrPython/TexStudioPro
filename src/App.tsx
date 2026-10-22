@@ -110,6 +110,9 @@ export default function App() {
   const [activePath, setActivePath] = useState<string | null>(null);
   const [symbols, setSymbols] = useState<ProjectSymbols>(emptySymbols);
   const [assets, setAssets] = useState<AssetItem[]>([]);
+  const assetsRef = useRef(assets);
+  assetsRef.current = assets;
+  const projectRefreshId = useRef(0);
   const [userTemplates, setUserTemplates] = useState<TemplateItem[]>([]);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
@@ -349,16 +352,23 @@ export default function App() {
   const refreshProjectData = useCallback(async () => {
     const currentProject = projectRef.current;
     if (!currentProject) return;
+    const generation = projectGeneration.current;
+    const request = ++projectRefreshId.current;
     try {
-      const [refreshed, nextSymbols] = await Promise.all([
+      const [refreshed, nextSymbols, nextAssets] = await Promise.all([
         window.texpro.openProject(currentProject.root),
         window.texpro.projectSymbols(currentProject.root),
+        window.texpro.listAssets(currentProject.root),
       ]);
-      if (projectRef.current?.root !== currentProject.root) return;
+      if (projectRef.current?.root !== currentProject.root || projectGeneration.current !== generation || request !== projectRefreshId.current) return;
       if (projectRef.current.rootFile !== refreshed.rootFile) resetBuildForMain();
       projectRef.current = refreshed;
       setProject(refreshed);
       setSymbols(nextSymbols);
+      assetsRef.current = nextAssets;
+      setAssets(nextAssets);
+      const files = new Set([...flattenFiles(refreshed.tree), ...nextAssets].map(file => file.path));
+      setPreviewFile(current => current && !files.has(current) ? null : current);
     } catch {
       // keep the existing index
     }
@@ -1027,40 +1037,63 @@ export default function App() {
     }
   }, [loadProject, pushToast]);
 
-  const refreshAssets = useCallback(async () => {
-    const currentProject = projectRef.current;
-    if (!currentProject) return;
-    try {
-      setAssets(await window.texpro.listAssets(currentProject.root));
-    } catch {
-      // keep the existing list
-    }
-  }, []);
+  useEffect(() => {
+    if (!project) return;
+    const root = project.root;
+    let cancelled = false, checking = false;
+    const check = async () => {
+      if (cancelled || checking || document.hidden) return;
+      checking = true;
+      const generation = projectGeneration.current;
+      try {
+        const found = await window.texpro.listAssets(root);
+        if (cancelled || projectRef.current?.root !== root || generation !== projectGeneration.current) return;
+        const previous = assetsRef.current;
+        if (found.length !== previous.length || found.some((asset, i) => asset.path !== previous[i]?.path || asset.modified !== previous[i]?.modified || asset.size !== previous[i]?.size)) {
+          await refreshProjectData();
+        }
+      } catch {
+        // A temporarily unavailable project must not erase the current index.
+      } finally { checking = false; }
+    };
+    const timer = window.setInterval(() => void check(), 2500);
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, [project?.root, refreshProjectData]);
 
   const handleImportAssets = useCallback(async () => {
     const currentProject = projectRef.current;
     if (!currentProject) return;
     try {
-      const next = await window.texpro.importAssets(currentProject.root, projectConfigRef.current.directories.assets);
-      setAssets(next);
+      await window.texpro.importAssets(currentProject.root, projectConfigRef.current.directories.assets);
+      if (projectRef.current?.root !== currentProject.root) return;
+      await refreshProjectData();
       pushToast(t('Asset imported'), 'success', t('Asset library'));
     } catch (error) {
       pushToast(t('Could not import assets'), 'error', String(error));
     }
-  }, [pushToast, t]);
+  }, [pushToast, refreshProjectData, t]);
 
   const handleDeleteAsset = useCallback(
     async (asset: AssetItem) => {
       const currentProject = projectRef.current;
       if (!currentProject) return;
       try {
-        setAssets(await window.texpro.deleteAsset(currentProject.root, asset.path));
+        await window.texpro.deleteAsset(currentProject.root, asset.path);
+        if (projectRef.current?.root !== currentProject.root) return;
+        await refreshProjectData();
         pushToast(t('Asset deleted'), 'success', asset.name);
       } catch (error) {
         pushToast(t('Could not delete asset'), 'error', String(error));
       }
     },
-    [pushToast, t],
+    [pushToast, refreshProjectData, t],
   );
 
   const handleInsertAsset = useCallback(

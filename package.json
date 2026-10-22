@@ -23,7 +23,8 @@
     "test:regression": "node --test tests/*.test.cjs",
     "test:ui": "node scripts/test-ui.cjs",
     "test:music": "node scripts/test-music.cjs",
-    "test:music:ui": "node scripts/test-ui.cjs --music"
+    "test:music:ui": "node scripts/test-ui.cjs --music",
+    "test:assets:ui": "node scripts/test-ui.cjs --assets"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",

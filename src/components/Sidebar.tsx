@@ -439,7 +439,7 @@ export function Sidebar({
                       <button
                         className="asset-delete"
                         onClick={() => {
-                          if (window.confirm(`${t('Delete asset?')}\n${asset.name}`)) void onDeleteAsset(asset);
+                          if (window.confirm(`${t('Delete asset?')}\n${asset.name}\n\n${t('The file is moved to .texpro/trash.')}`)) void onDeleteAsset(asset);
                         }}
                         title={t('Delete')}
                       >

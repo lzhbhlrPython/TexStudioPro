@@ -347,7 +347,8 @@ function createWindow() {
   });
 
   if (isSmoke) {
-    if (process.env.TEXPRO_MUSIC_REGRESSION === '1') require('./music-regression.cjs')(mainWindow, { app, ipcMain });
+    if (process.env.TEXPRO_ASSETS_REGRESSION === '1') require('./assets-regression.cjs')(mainWindow, { app, ipcMain });
+    else if (process.env.TEXPRO_MUSIC_REGRESSION === '1') require('./music-regression.cjs')(mainWindow, { app, ipcMain });
     else if (process.env.TEXPRO_REGRESSION === '1') require('./regression.cjs')(mainWindow, { app, ipcMain });
     else require('./smoke.cjs')(mainWindow, { app, isSmokeWelcome });
   }
