@@ -108,6 +108,7 @@ Second paragraph.
     await click(el('.cm-reference-info button'));
     await wait(`document.querySelector('.titlebar-file-name').textContent==='chapter.tex'`);
     await open('return-writing'); await wait(`document.querySelector('.titlebar-file-name').textContent==='main.tex'`);
+    await wait(`document.querySelector('.statusbar').textContent===${JSON.stringify(origin)}`);
     assert.equal(await js(`document.querySelector('.statusbar').textContent`), origin);
     await endLine('Writing anchor.'); await type(' session-marker');
     await click(el('.tree-file[title^="chapter.tex"]')); await click(el('.tree-file[title^="main.tex"]'));

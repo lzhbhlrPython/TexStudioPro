@@ -241,7 +241,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     collab: new Compartment(),
   }).current;
   const completionSource = useRef(makeLatexCompletionSource(() => symbolsRef.current)).current;
-  const lastCursorEmit = useRef(0);
+  const cursorFrame = useRef(0);
   const [selectionBubble, setSelectionBubble] = useState<{ from: number; to: number; left: number; top: number } | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const bubbleFrame = useRef(0);
@@ -460,15 +460,16 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
             scheduleBubble(update.view);
           }
           if (update.docChanged || update.selectionSet) {
-            const now = performance.now();
-            if (now - lastCursorEmit.current < 32) return;
-            lastCursorEmit.current = now;
-            const selection = update.state.selection.main;
-            const line = update.state.doc.lineAt(selection.head);
-            propsRef.current.onCursor({
-              line: line.number,
-              column: selection.head - line.from + 1,
-              selected: Math.abs(selection.head - selection.from),
+            cancelAnimationFrame(cursorFrame.current);
+            cursorFrame.current = requestAnimationFrame(() => {
+              if (viewRef.current !== update.view) return;
+              const selection = update.view.state.selection.main;
+              const line = update.view.state.doc.lineAt(selection.head);
+              propsRef.current.onCursor({
+                line: line.number,
+                column: selection.head - line.from + 1,
+                selected: Math.abs(selection.head - selection.anchor),
+              });
             });
           }
         }),
@@ -494,6 +495,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     });
     return () => {
       props.sessions.set(props.path, { state: view.state, top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft });
+      cancelAnimationFrame(cursorFrame.current);
       view.destroy();
       viewRef.current = null;
     };
