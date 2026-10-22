@@ -22,7 +22,7 @@ Their common job is to write and revise real LaTeX source while seeing a faithfu
 
 ## Product Purpose
 
-TeXPro is a visual-first LaTeX workbench. It keeps ordinary `.tex` source as the document of record while rendering formulas, headings, tables, figures, code blocks, citations, and TikZ diagrams in place. Success means an author can move between writing, structure, compile diagnostics, PDF, and project maintenance without losing context or control.
+TeXPro is a writing-first LaTeX application. Continuous composition and revision are its primary capabilities; inline rendering and visual tools assist that work. It keeps ordinary `.tex` source as the document of record while rendering formulas, headings, tables, figures, code blocks, citations, and TikZ diagrams in place. Success means an author can keep writing across content types, then compile and maintain the project without losing their place, selection, or control.
 
 ## Positioning
 
@@ -57,6 +57,7 @@ Confirmed capabilities include:
 
 Durable constraints confirmed by the user:
 
+- **Writing comes first:** every interaction must serve continuous writing. Learn from Typora's editing behavior, not only its paper appearance. This applies equally to prose, formulas, tables, music, circuit diagrams, logic gates, chemical structural formulas, skeletal formulas, and other document content. Visualization is auxiliary; ordinary content entry and revision must not require a studio, configuration form, or apply/finish ceremony. This is a product requirement for future changes, not a claim that every existing interaction already meets it.
 - **Local-first, privacy, reversibility:** project content stays local by default; secrets use the OS keychain where available; version history and backups must be manually controllable and recoverable.
 - **Cross-platform consistency:** macOS is the primary environment, but UI and behavior should stay coherent on Windows and Linux.
 - The application must not depend on a single fixed compile command; completion, macros, and build actions are user-extensible.
@@ -89,11 +90,13 @@ Release builds validate renderer assets before packing and inspect the resulting
 
 ## Product Principles
 
-1. **Source is the document of record.** Visual affordances may be rich, but the file remains ordinary, portable LaTeX.
-2. **Keep the writing surface quiet.** Complexity belongs in contextual tools, not permanently in the writing column.
-3. **Close the loop.** Writing, project structure, compile diagnostics, PDF, references, and versioning should meet in the same workspace.
-4. **Make automation inspectable.** AI, MCP, custom actions, and backups must expose what they run and stay reversible.
-5. **Local by default, explicit when remote.** Network, cloud, and collaboration are choices with visible boundaries.
+1. **Protect continuous writing.** Treat prose, formulas, table cells, music, circuit diagrams, logic gates, chemical structural formulas, skeletal formulas, and other document content as parts of one writing flow. Enter, revise, and leave content with predictable caret and keyboard behavior. Direct text entry remains primary; a visual helper must not automatically take over focus or demand a separate completion step.
+2. **Source is the document of record.** Keep ordinary, portable LaTeX authoritative and always accessible in context. Source authority does not mean forcing every ordinary edit into raw markup: direct cell text entry and inline rendered content can still serve writing.
+3. **Keep assistance contextual and optional.** Preserve the quiet paper surface. Show only tools relevant to an explicit selection or request; moving a configuration form into the document does not make it continuous writing. Studios are optional helpers rather than the default route for routine content edits.
+4. **Preserve the author's place.** Preview updates, validation, package insertion, background compilation, and auxiliary tools must preserve the active file, caret, selection, undo history, and writing position. IME composition and incomplete input must remain editable while rendering catches up.
+5. **Close the loop.** Writing, project structure, compile diagnostics, PDF, references, and versioning should meet in the same workspace, with a consistent selected main file.
+6. **Make automation inspectable.** AI, MCP, custom actions, and backups must expose what they run and stay reversible.
+7. **Local by default, explicit when remote.** Network, cloud, and collaboration are choices with visible boundaries.
 
 ## Accessibility & Inclusion
 
