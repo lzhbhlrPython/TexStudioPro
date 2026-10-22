@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 const { IGNORED_DIRS, isTextFile } = require('./project-files.cjs');
 const history = require('./history.cjs');
 const git = require('./git.cjs');
+const { musicSpacing } = require('./music.cjs');
 const { readConfig, resolveProjectRoot, resolveCompileRoot, rebaseConfiguredRoot } = require('./project-root.cjs');
 
 function walk(root, current = root, depth = 0, budget = { left: 1200 }) {
@@ -1742,6 +1743,7 @@ function parseWarningsFromStdout(stdout) {
 }
 
 let activeCompilation = null;
+const compilations = new Map();
 
 function killProcessTree(child, signal) {
   if (!child) return;
@@ -1761,18 +1763,16 @@ function killProcessTree(child, signal) {
 }
 
 function cancelCompilation(runId) {
-  if (!activeCompilation) return { ok: false, error: 'No compilation is running' };
-  if (runId && activeCompilation.runId && activeCompilation.runId !== runId) {
-    return { ok: false, error: 'Run id does not match the active compilation' };
-  }
-  activeCompilation.cancelled = true;
-  killProcessTree(activeCompilation.child, 'SIGTERM');
-  const child = activeCompilation.child;
+  const controller = runId ? compilations.get(runId) : activeCompilation;
+  if (!controller) return { ok: false, error: 'No matching compilation is running' };
+  controller.cancelled = true;
+  killProcessTree(controller.child, 'SIGTERM');
+  const child = controller.child;
   setTimeout(() => killProcessTree(child, 'SIGKILL'), 2200);
   return { ok: true };
 }
 
-async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeoutMs = 180000, runId, buildDir: buildDirOption, onData }) {
+async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeoutMs = 180000, runId, buildDir: buildDirOption, onData, isolated = false }) {
   const started = Date.now();
   let rootFile;
   try { rootFile = resolveCompileRoot(projectRoot, activeFile, fallbackRoot); }
@@ -1815,8 +1815,12 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
   }
 
   const controller = { runId: runId || String(Date.now()), child: null, cancelled: false };
-  activeCompilation = controller;
-  const result = await new Promise((resolve) => {
+  if (!isolated) activeCompilation = controller;
+  compilations.set(controller.runId, controller);
+  const mx1Path = path.join(buildDir, path.basename(rootFile, path.extname(rootFile)) + '.mx1');
+  let beforeMx1 = null;
+  try { beforeMx1 = fs.readFileSync(mx1Path, 'utf8'); } catch { /* first music build */ }
+  const runStage = (command, stageArgs, cwd) => new Promise((resolve) => {
     let child;
     let timer = null;
     let stdout = '';
@@ -1827,12 +1831,12 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      if (activeCompilation === controller) activeCompilation = null;
       resolve({ code, signal, stdout, stderr, error, timedOut, cancelled: controller.cancelled });
     };
     try {
-      child = spawn(latexmk, args, {
-        cwd: projectRoot,
+      if (controller.cancelled) { finish(null, null, null); return; }
+      child = spawn(resolveTexBinary(command), stageArgs, {
+        cwd,
         env: texEnvironment(projectRoot),
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: process.platform !== 'win32',
@@ -1847,7 +1851,7 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
       timedOut = true;
       killProcessTree(child, 'SIGTERM');
       setTimeout(() => killProcessTree(child, 'SIGKILL'), 2500);
-    }, timeoutMs);
+    }, Math.max(1, timeoutMs - (Date.now() - started)));
 
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
@@ -1862,6 +1866,34 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
     child.on('error', (error) => finish(null, null, error));
     child.on('close', (code, signal) => finish(code, signal, null));
   });
+
+  let result;
+  try {
+    result = await runStage(latexmk, args, projectRoot);
+    if (result.code === 0 && !result.cancelled && !result.timedOut) {
+      const spacing = await musicSpacing({ buildDir, jobName: path.basename(rootFile, path.extname(rootFile)), before: beforeMx1,
+        resolveScript: async () => {
+          const found = await runLatexOnce('kpsewhich', ['musixflx.lua'], projectRoot, 10000);
+          return found.code === 0 ? found.stdout.trim() : '';
+        },
+        run: (command, stageArgs, cwd) => {
+          onData?.({ stream: 'meta', text: '$ texlua musixflx.lua — music spacing\n', rootFile });
+          return runStage(command, stageArgs, cwd);
+        },
+      });
+      if (spacing) {
+        const firstOutput = result.stdout + '\n' + (spacing.stdout || '');
+        if (spacing.code === 0 && !controller.cancelled && !spacing.timedOut) {
+          onData?.({ stream: 'meta', text: '$ latexmk -g — apply music spacing\n', rootFile });
+          result = await runStage(latexmk, ['-g', ...args], projectRoot);
+          result.stdout = firstOutput + '\n' + result.stdout;
+        } else result = { ...result, ...spacing, stdout: firstOutput, cancelled: controller.cancelled };
+      }
+    }
+  } finally {
+    compilations.delete(controller.runId);
+    if (activeCompilation === controller) activeCompilation = null;
+  }
 
   let log = '';
   try {
@@ -1904,6 +1936,28 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
     stdout: result.stdout.slice(-12000),
     stderr: result.stderr.slice(-4000),
   };
+}
+
+async function renderMusicPreview({ projectRoot, source, runId }) {
+  if (typeof source !== 'string' || source.length > 200000 || !/\\documentclass\b/.test(source)) throw new Error('Invalid music preview source');
+  const key = crypto.createHash('sha256').update(source).digest('hex').slice(0, 24);
+  const cache = path.join(projectRoot, '.texpro', 'music-previews');
+  fs.mkdirSync(cache, { recursive: true });
+  const pdf = path.join(cache, key + '.pdf');
+  if (fs.existsSync(pdf)) return { ok: true, bytes: new Uint8Array(fs.readFileSync(pdf)) };
+  // Separate jobs never share auxiliary files. Publish only successfully completed PDFs.
+  const work = fs.mkdtempSync(path.join(cache, 'build-'));
+  try {
+    fs.writeFileSync(path.join(work, 'main.tex'), source, 'utf8');
+    const result = await runCompile({ projectRoot: work, engine: /[\u3400-\u9fff]/.test(source) ? 'xelatex' : 'pdflatex', runId, timeoutMs: 45000, isolated: true });
+    if (!result.ok) return { ok: false, error: result.error || result.diagnostics.find(d => d.severity === 'error')?.message || 'Music typesetting failed', log: result.log.slice(-6000) };
+    const completed = path.join(work, 'complete.pdf');
+    fs.copyFileSync(result.pdfPath, completed);
+    fs.renameSync(completed, pdf);
+    return { ok: true, bytes: new Uint8Array(fs.readFileSync(pdf)) };
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
 }
 
 function parseSynctexValue(text, key) {
@@ -1980,6 +2034,7 @@ async function synctexInverse({ projectRoot, pdfFile, page, x, y }) {
 }
 
 module.exports = {
+  renderMusicPreview,
   ...history,
   ...git,
   openProject,

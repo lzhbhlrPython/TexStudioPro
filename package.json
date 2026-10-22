@@ -21,7 +21,9 @@
     "package:linux": "npm run build && electron-builder --linux AppImage deb rpm --x64",
     "verify:release": "node scripts/verify-release.cjs",
     "test:regression": "node --test tests/*.test.cjs",
-    "test:ui": "node scripts/test-ui.cjs"
+    "test:ui": "node scripts/test-ui.cjs",
+    "test:music": "node scripts/test-music.cjs",
+    "test:music:ui": "node scripts/test-ui.cjs --music"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
@@ -111,7 +113,8 @@
       "electron/services/history.cjs",
       "electron/services/git.cjs",
       "electron/services/project-files.cjs",
-      "electron/services/project-root.cjs"
+      "electron/services/project-root.cjs",
+      "electron/services/music.cjs"
     ],
     "nsis": {
       "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}"

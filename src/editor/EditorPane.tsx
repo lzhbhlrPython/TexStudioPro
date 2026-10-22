@@ -47,8 +47,11 @@ import { smartPaste } from '../lib/pasteCleaner';
 
 export interface EditorHandle {
   getPath: () => string;
+  getContent: () => string;
   gotoLine: (line: number, column?: number) => void;
   insert: (template: string) => void;
+  insertLiteral: (text: string, range?: { from: number; to: number }) => void;
+  getSelectionRange: () => { from: number; to: number };
   wrapSelection: (before: string, after: string) => void;
   getSelection: () => string;
   focus: () => void;
@@ -612,6 +615,15 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
           selection: { anchor: pos },
           effects: EditorView.scrollIntoView(pos, { y: 'center' }),
         });
+        view.focus();
+      },
+      getContent() { return viewRef.current?.state.doc.toString() || ''; },
+      getSelectionRange() { const s = viewRef.current?.state.selection.main; return { from: s?.from || 0, to: s?.to || 0 }; },
+      insertLiteral(text, range) {
+        const view = viewRef.current;
+        if (!view) return;
+        const s = range || view.state.selection.main;
+        view.dispatch({ changes: { from: s.from, to: s.to, insert: text }, selection: { anchor: s.from + text.length }, scrollIntoView: true });
         view.focus();
       },
       insert(template: string) {

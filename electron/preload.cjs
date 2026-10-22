@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('texpro', {
   deleteSecret: (name) => ipcRenderer.invoke('secret:delete', name),
   lookupBibtex: (identifier) => ipcRenderer.invoke('bib:lookup', identifier),
   chooseBibFile: () => ipcRenderer.invoke('bib:open'),
+  renderMusicPreview: (payload) => ipcRenderer.invoke('music:preview', payload),
   renderTemplatePreview: (payload) => ipcRenderer.invoke('templates:preview', payload),
   saveUserTemplate: (payload) => ipcRenderer.invoke('templates:save', payload),
   deleteUserTemplate: (id) => ipcRenderer.invoke('templates:delete', id),

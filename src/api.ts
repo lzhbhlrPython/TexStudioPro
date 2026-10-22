@@ -57,6 +57,7 @@ export interface TexProApi {
   deleteSecret: (name: string) => Promise<{ ok: boolean }>;
   lookupBibtex: (identifier: string) => Promise<{ entry: { type: string; key: string; fields: Record<string, string> }; source: string }>;
   chooseBibFile: () => Promise<{ path: string; content: string; name: string } | null>;
+  renderMusicPreview: (payload: { projectRoot: string; source: string; runId: string }) => Promise<{ ok: boolean; bytes?: Uint8Array; error?: string; log?: string }>;
   renderTemplatePreview: (payload: { source: string; engine: string }) => Promise<{ ok: boolean; path?: string; cached?: boolean; dataUrl?: string; error?: string }>;
   saveUserTemplate: (payload: {
     name: string;

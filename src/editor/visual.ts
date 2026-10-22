@@ -1,3 +1,5 @@
+import { MusicWidget, musicSourceField, revealMusicSource } from './musicWidget';
+import { findMusicBlocks } from '../lib/music';
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 import { StateEffect, StateField, type EditorState, type Extension, type Range } from '@codemirror/state';
 import katex from 'katex';
@@ -676,6 +678,12 @@ function buildDecorations(state: EditorState, context: VisualContext): Decoratio
     occupied.push({ from, to });
   };
 
+  for (const block of findMusicBlocks(text)) {
+    // Reserve the entire block before math/TikZ scanners see generated TeX or metadata.
+    if (state.field(musicSourceField, false) === block.id) occupied.push({ from: block.from, to: block.to });
+    else addBlock(block.from, block.to, new MusicWidget(block, context.projectRoot));
+  }
+
   const preamble = text.match(/\\documentclass(?:\[[^\]]*\])?\{[^}]+\}/);
   const documentStart = text.match(/\\begin\{document\}/);
   if (context.collapsePreamble && preamble && documentStart && !touched(0, documentStart.index! + documentStart[0].length)) {
@@ -1042,6 +1050,9 @@ export function visualLatex(config: VisualConfig): Extension {
       return buildDecorations(state, config.get());
     },
     update(value, transaction) {
+      // Keep interactive music DOM mounted while its entire source range changes.
+      // Mapping first would remove the replacement, losing focus before the next frame.
+      if (transaction.docChanged && (transaction.isUserEvent('input.music') || transaction.isUserEvent('undo') || transaction.isUserEvent('redo'))) return buildDecorations(transaction.state, config.get());
       let next = value.map(transaction.changes);
       for (const effect of transaction.effects) {
         if (effect.is(setVisualDecorations)) next = effect.value;
@@ -1058,7 +1069,7 @@ export function visualLatex(config: VisualConfig): Extension {
       constructor(private readonly view: EditorView) {}
 
       update(update: ViewUpdate) {
-        if (!update.docChanged && !update.selectionSet) return;
+        if (!update.docChanged && !update.selectionSet && !update.transactions.some(tr => tr.effects.some(e => e.is(revealMusicSource)))) return;
         if (this.frame) return;
         this.frame = window.requestAnimationFrame(() => {
           this.frame = 0;
@@ -1076,6 +1087,7 @@ export function visualLatex(config: VisualConfig): Extension {
   );
 
   return [
+    musicSourceField,
     field,
     renderer,
     EditorView.domEventHandlers({

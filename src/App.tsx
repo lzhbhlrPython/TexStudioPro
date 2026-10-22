@@ -1,3 +1,4 @@
+import { musicBlock, newScore } from './lib/music';
 import { TemplateGallery, PgfplotsStudio, PluginMarket, PaperStudio, CrewPanel, CompileTheater, CommandStudio, PackageManager, GitPanel, InkStudio, SchematicStudio, BackupPanel, VersionReview, FontCoverage, ProjectGraph, ArxivPanel, McpPanel, AIAssistant, CommentsPanel, ExportStudio, ProjectDoctor, TableStudio, ImportStudio, TemplateWorkshop, ProjectStudio, BibManager, FormulaStudio, LayoutStudio, TikzStudio } from './app/lazyTools';
 import { SETTINGS_KEY, RECENT_KEY, loadSettings, loadRecent } from './app/settings';
 import { findFirstTex, flattenFiles, isTextPath, normalizeFile, fileFromBuild, reanchorComments } from './app/project';
@@ -32,6 +33,7 @@ import {
   List,
   MessageSquare,
   Moon,
+  Music2,
   Network,
   Paintbrush,
   Package,
@@ -1616,6 +1618,30 @@ export default function App() {
     }
   }, [editMainFile, pushToast]);
 
+  const handleInsertMusic = useCallback(async () => {
+    const target = activePathRef.current;
+    const currentProject = projectRef.current;
+    if (!target || !currentProject?.rootFile || !editorRef.current) return;
+    const generation = projectGeneration.current;
+    const range = editorRef.current.getSelectionRange();
+    const before = docsRef.current[target]?.content;
+    if (!(await editMainFile(editor => { editor.ensurePackage('musixtex'); editor.ensurePackage('tikz'); }))) return;
+    if (generation !== projectGeneration.current) return;
+    if (target !== currentProject.rootFile) {
+      await openFile(target);
+      for (let frame = 0; frame < 30 && editorRef.current?.getPath() !== target; frame++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      if (generation !== projectGeneration.current || editorRef.current?.getPath() !== target || docsRef.current[target]?.content !== before) return;
+    }
+    let insertion = target !== currentProject.rootFile ? range : editorRef.current?.getSelectionRange();
+    if (target === currentProject.rootFile && insertion) {
+      const text = editorRef.current?.getContent() || '';
+      const body = /\\begin\s*\{document\}/.exec(text);
+      if (body && insertion.from < body.index + body[0].length) insertion = { from: body.index + body[0].length, to: body.index + body[0].length };
+    }
+    editorRef.current?.insertLiteral('\n' + musicBlock(newScore()) + '\n\n', insertion);
+    setSettings(current => ({ ...current, visual: true }));
+  }, [editMainFile, openFile]);
+
   const handleApplyLayout = useCallback(async (layout: LayoutResult) => {
     if (await editMainFile(editor => editor.applyLayout(layout))) {
       setSettings(current => ({ ...current, engine: layout.engine }));
@@ -1967,6 +1993,7 @@ export default function App() {
         icon: Sigma,
         run: () => insert(snippetLibrary.find((item) => item.id === 'equation')?.template || ''),
       },
+      { id: 'music', label: t('Insert music'), group: 'Insert', icon: Music2, run: () => void handleInsertMusic() },
       {
         id: 'insert-table',
         label: t('Insert table'),
@@ -2052,6 +2079,7 @@ export default function App() {
     [
       project,
       handleCloseProject,
+      handleInsertMusic,
       editMainFile,
       settings.visual,
       settings.focus,
@@ -2079,6 +2107,7 @@ export default function App() {
   const moreActions: MoreAction[] = useMemo(
     () => [
       { id: 'close-project', label: 'Close project and return to Welcome', group: 'File', icon: FolderOpen, run: () => void handleCloseProject() },
+      { id: 'music', label: 'Insert music', group: 'Insert', icon: Music2, run: () => void handleInsertMusic() },
       { id: 'formula', label: 'Formula editor', group: 'Insert', icon: Sigma, run: openFormula },
       { id: 'import', label: 'Import Markdown / Typst', group: 'File', icon: FileInput, run: () => setImportOpen(true) },
       { id: 'equation', label: 'Insert display equation', group: 'Insert', icon: Sigma, run: () => insert(snippetLibrary.find((item) => item.id === 'equation')?.template || '') },
@@ -2128,7 +2157,7 @@ export default function App() {
       { id: 'settings', label: 'Settings', group: 'Tools', icon: Settings2, run: () => setSettingsOpen(true) },
       { id: 'palette', label: 'Command palette', group: 'Tools', shortcut: '⌘K', icon: Command, run: () => setPaletteOpen(true) },
     ],
-    [editMainFile, handleCloseProject, settings.visual, settings.focus, settings.typewriter, settings.theme, openFormula, insert, toggleVisual, toggleFocus, toggleTypewriter, toggleDayNight, handleOpenFolder, saveActive, runCompile, manualForwardSync, t],
+    [handleInsertMusic, editMainFile, handleCloseProject, settings.visual, settings.focus, settings.typewriter, settings.theme, openFormula, insert, toggleVisual, toggleFocus, toggleTypewriter, toggleDayNight, handleOpenFolder, saveActive, runCompile, manualForwardSync, t],
   );
 
   moreActionsRef.current = moreActions;

@@ -6,6 +6,7 @@ const { spawn } = require('node:child_process');
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'texpro-ui-regression-'));
 const env = { ...process.env, TEXPRO_SMOKE: '1', TEXPRO_REGRESSION: '1', TEXPRO_USER_DATA: userData, TEXPRO_ARTIFACTS: path.resolve(__dirname, '../artifacts') };
 delete env.ELECTRON_RUN_AS_NODE;
+if (process.argv.includes('--music')) env.TEXPRO_MUSIC_REGRESSION = '1';
 const child = spawn(require('electron'), ['.'], { cwd: path.resolve(__dirname, '..'), env, stdio: 'inherit' });
 const timer = setTimeout(() => { console.error('UI regression timed out'); child.kill('SIGTERM'); }, 120000);
 const cleanup = () => { clearTimeout(timer); fs.rmSync(userData, { recursive: true, force: true }); };

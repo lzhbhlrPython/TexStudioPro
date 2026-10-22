@@ -11,6 +11,9 @@ TeXPro 保留普通 LaTeX 源文件。渲染进程负责编辑与展示，preloa
 | `src/app/project.ts` | 工程树遍历、文件路径与评论锚点 |
 | `src/app/lazyTools.tsx` | 工具按需加载、保留关闭后的状态、隔离渲染错误 |
 | `src/editor/` | CodeMirror 配置、补全、可视 decoration 与协作扩展 |
+| `src/lib/music.ts` | 乐谱模型、校验、模板、普通 TeX 生成与注释数据往返 |
+| `src/editor/MusicBlock.tsx` / `musicWidget.tsx` | 正文内记谱、真实 TeX 预览及 CodeMirror 原位更新 |
+| `electron/services/music.cjs` | MusiXTeX 间距计算，使用 TeX 自带 texlua |
 | `src/lib/pdfSync.ts` | PDF 坐标变换、文字盒子合并、框选取样 |
 | `src/lib/schematic.ts` | 图形类型、模板、缓存校验、原生 LaTeX 生成；不依赖 React |
 | `src/hooks/useDiagramPreview.ts` | 防抖预览、异步失败和过期响应隔离 |
@@ -37,6 +40,12 @@ TeXPro 保留普通 LaTeX 源文件。渲染进程负责编辑与展示，preloa
 
 关闭工程在保存完成前保留界面，失败则继续编辑。成功后取消编译、结束协作、清空工程文档及预览，回到统一主题的 Welcome，最近工程保留。工程代数与编译 ID 阻止旧工程的异步加载、编译和 SyncTeX 结果写回当前视图。
 
+## 正文内乐谱
+
+乐谱 decoration 先于公式和 TikZ 扫描占据完整块。React 控件通过 CodeMirror transaction 更新普通 TeX，保留撤销与保存；手写 TeX 与注释数据不一致时以源码为准。插入操作在工程主文件加依赖，在当前文件写块，并从编辑器实时文档读取插入位置，避免导言区刚修改而 React 状态尚未刷新的偏移问题。
+
+`runCompile` 在第一轮 latexmk 后检查 mx1，必要时执行 TeX 自带 musixflx.lua 并重跑 latexmk。每次预览使用独立构建目录与 runId，不覆盖主编译的取消控制器；仅成功 PDF 原子发布到缓存，失败或取消会删除临时目录。PDF.js 在编辑器内渲染并裁去空白页边，正文排版仍以主文件 PDF 为准。
+
 ## 图形状态与手势
 
 每次拖拽记录指针 ID、捕获元素、起始文档快照和画布偏移。移动坐标包含滚动量并按缩放还原。结束手势时先捕获快照、清除引用，再排队更新历史，避免延迟执行的 React updater 读取空引用。只有位置变化才生成撤销步骤。释放、取消、捕获丢失或窗口失焦都会结束手势。
@@ -54,7 +63,7 @@ SyncTeX 的 `x/y` 是文字锚点，`h/v/W/H` 是排版盒子；不能把锚点�
 1. 定时和手动触发先按上海时区检查当天提交（committer 时间、first-parent 历史）。空提交不计；当天无实际文件变更则跳过测试、打包、发布。有变更时测试任务运行回归测试、类型检查与前端构建。
 2. 每个平台在独立 checkout 中安装依赖、设置版本、构建前端。
 3. `scripts/before-pack.cjs` 校验实际待打包目录，缺少入口/资源即失败。
-4. electron-builder 创建应用；`scripts/after-pack.cjs` 读取实际 ASAR 并复核资源，同时检查外部 MCP 服务及其五个服务依赖。MCP 由普通 Node 启动，不能依赖 Electron 的 ASAR 加载能力。
+4. electron-builder 创建应用；`scripts/after-pack.cjs` 读取实际 ASAR 并复核资源，同时检查外部 MCP 服务及其六个服务依赖。MCP 由普通 Node 启动，不能依赖 Electron 的 ASAR 加载能力。
 5. 三个平台成功后，既有 release job 收集安装包并发布 Nightly。
 
 本地运行 `npm run package -- --publish never` 可生成未签名 macOS 目录包。校验依赖开发依赖 `@electron/asar`。验收还需从安装后的应用启动测试；其他系统安装包的存在不证明编译工具、字体、外部命令和文件操作在该系统可用。

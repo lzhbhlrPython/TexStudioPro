@@ -71,7 +71,7 @@ const zhMenu = {
   'Import Markdown / Typst…': '导入 Markdown / Typst…', 'Export Document…': '导出文档…',
   'Create arXiv Package…': '创建 arXiv 包…', 'Project Backup…': '项目备份…',
   'Template Library…': '模板库…', 'Template Workshop…': '模板工坊…',
-  'Formula Editor…': '公式编辑器…', 'Display Equation': '独立公式', Table: '表格',
+  'Insert Music': '插入乐谱', 'Formula Editor…': '公式编辑器…', 'Display Equation': '独立公式', Table: '表格',
   'Visual Table Editor…': '可视化表格…', Figure: '图片', 'Code Block': '代码块',
   'Chart Studio…': '图表工作室…', 'Circuit Studio…': '电路工作室…',
   'Logic Studio…': '逻辑门工作室…', 'Structure Studio…': '结构式工作室…',
@@ -156,6 +156,7 @@ function buildMenu() {
     {
       label: 'Insert',
       submenu: [
+        tool('Insert Music', 'music'),
         tool('Formula Editor…', 'formula', 'CmdOrCtrl+Shift+E'),
         tool('Display Equation', 'equation'),
         { type: 'separator' },
@@ -346,7 +347,8 @@ function createWindow() {
   });
 
   if (isSmoke) {
-    if (process.env.TEXPRO_REGRESSION === '1') require('./regression.cjs')(mainWindow, { app, ipcMain });
+    if (process.env.TEXPRO_MUSIC_REGRESSION === '1') require('./music-regression.cjs')(mainWindow, { app, ipcMain });
+    else if (process.env.TEXPRO_REGRESSION === '1') require('./regression.cjs')(mainWindow, { app, ipcMain });
     else require('./smoke.cjs')(mainWindow, { app, isSmokeWelcome });
   }
 }
@@ -487,6 +489,11 @@ function registerIpc() {
     if (result.canceled || result.filePaths.length === 0) return null;
     const file = result.filePaths[0];
     return { path: file, name: path.basename(file), content: fs.readFileSync(file, 'utf8') };
+  });
+
+  ipcMain.handle('music:preview', async (_event, payload) => {
+    if (!payload || typeof payload.projectRoot !== 'string' || !isAllowed(payload.projectRoot) || typeof payload.runId !== 'string' || !/^music-[a-f0-9-]{36}$/.test(payload.runId)) throw new Error('Project is not open');
+    return tex.renderMusicPreview(payload);
   });
 
   ipcMain.handle('templates:preview', async (_event, payload) => {

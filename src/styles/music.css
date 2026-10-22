@@ -1,0 +1,58 @@
+/* Music is an in-flow writing block. Editing chrome appears only in context. */
+.cm-music-host { margin: 18px 0; min-width: 0; }
+.cm-music-block { position: relative; color: var(--editor-text); font-family: var(--font-ui); font-size: 12px; line-height: 1.5; border-radius: 5px; }
+.music-block-actions { display: flex; justify-content: space-between; gap: 12px; align-items: center; color: var(--text-muted); opacity: 0; transition: opacity .15s; }
+.cm-music-block:hover .music-block-actions, .cm-music-block:focus-within .music-block-actions, .cm-music-block.editing .music-block-actions { opacity: 1; }
+.music-block-actions > span, .music-block-actions > div, .music-block-actions button, .music-inline-footer button { display: inline-flex; align-items: center; gap: 6px; }
+.music-block-actions button, .music-inline-footer button { min-height: 30px; padding: 3px 8px; border-radius: 4px; }
+.cm-music-block button:hover { background: var(--panel-alt); }
+.cm-music-block :is(button,input,select,textarea):focus-visible, .music-note:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cm-music-block button:disabled { opacity: .4; cursor: default; }
+.music-paper { cursor: text; min-height: 48px; border-radius: 4px; }
+.music-paper:focus-visible { outline: 1px solid var(--accent); }
+.music-typeset canvas { display: block; max-width: 100%; margin: 0 auto; background: white; }
+.music-typeset { overflow: hidden; border-radius: 3px; }
+.music-preview-state { min-height: 22px; display: flex; gap: 7px; align-items: center; padding: 3px 0; color: var(--text-muted); }
+.music-error { color: var(--danger); white-space: pre-wrap; overflow-wrap: anywhere; }
+.music-inline-controls { background: var(--panel); border-block: 1px solid var(--border); padding: 14px 12px; margin: 6px 0 12px; }
+.music-meta { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 12px; margin-bottom: 12px; }
+.music-meta label { display: flex; flex-direction: column; gap: 4px; color: var(--text-muted); font-size: 11px; min-width: 64px; }
+.music-meta input, .music-meta select { min-height: 30px; max-width: 160px; padding: 4px 6px; background: var(--paper); color: var(--editor-text); border: 1px solid var(--border); border-radius: 4px; font: 12px var(--font-ui); }
+.music-meta input[type=number] { width: 64px; }
+.music-meta .music-check { flex-direction: row; align-items: center; min-height: 30px; gap: 6px; }
+.music-check input { min-height: 0; accent-color: var(--accent); }
+.music-part-tabs { display: flex; flex-wrap: wrap; gap: 5px; padding: 7px 0 14px; }
+.music-part-tabs button { padding: 4px 8px; border-radius: 4px; color: var(--text-muted); min-height: 30px; }
+.music-part-tabs button.active { color: var(--accent-strong); background: var(--accent-soft); }
+.music-input-scroll { overflow: auto; max-width: 100%; color: var(--editor-text); background: var(--paper); border-radius: 4px; }
+.music-input { display: block; max-width: none; touch-action: pan-x; }
+.music-note { cursor: pointer; }
+.music-note-target { fill: transparent; }
+.music-note.selected .music-note-target { fill: var(--accent-soft); }
+.music-note.selected { color: var(--accent-strong); }
+.music-note-tools { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin: 10px 0 14px; }
+.music-note-tools > span { margin-right: 6px; color: var(--text-muted); }
+.music-note-tools button { min-width: 30px; min-height: 30px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 4px; background: var(--paper); }
+.music-help, .music-warning, .music-raw p { color: var(--text-muted); margin: 8px 0 0; font-size: 11px; line-height: 1.7; }
+.music-warning { color: var(--accent-strong); }
+.music-inline-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-muted); margin-top: 6px; font-size: 11px; }
+.music-inline-footer > span { margin-left: auto; }
+.music-raw textarea { width: 100%; min-height: 180px; max-height: 420px; padding: 10px; margin-top: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font: 12px/1.6 var(--font-mono); resize: vertical; }
+.music-raw button { padding: 6px 0; color: var(--accent-strong); }
+@media (max-width: 760px) { .music-meta input, .music-meta select { max-width: 130px; } .music-inline-footer > span { width: 100%; margin-left: 0; } .music-inline-controls { padding: 12px 8px; } }
+@media (prefers-reduced-motion: reduce) { .music-block-actions { transition: none; } }
+
+.music-input text { fill: currentColor; }
+.music-block-actions, .music-inline-footer, .music-preview-state, .music-raw p { color: var(--editor-text); }
+.music-block-actions button:hover, .music-inline-footer button:hover, .music-raw button:hover { background: var(--math-hover); }
+.music-note-tools button:hover { background: var(--paper-deep); }
+.music-preview-state.has-error { align-items: flex-start; flex-direction: column; padding: 10px 0; }
+.music-preview-error { color: var(--editor-text); line-height: 1.6; width: 100%; }
+.music-preview-error strong { color: var(--danger); font-weight: 500; }
+.music-preview-error p { margin: 4px 0 8px; }
+.music-error-actions { display: flex; gap: 8px; }
+.music-error-actions button { border: 1px solid var(--border-strong); padding: 5px 9px; border-radius: 4px; }
+.music-error-actions button:hover { background: var(--math-hover); }
+.music-preview-error details { margin-top: 8px; }
+.music-preview-error summary { cursor: pointer; }
+.music-preview-error pre { margin: 5px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.5 var(--font-mono); }
