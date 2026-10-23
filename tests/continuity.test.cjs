@@ -132,3 +132,22 @@ test('citation completion replaces only the current key and keeps an existing cl
   result.options[0].apply({ get state() { return state; }, dispatch(spec) { state = state.update(spec).state; }, focus() {} }, result.options[0], result.from, state.doc.length - 1);
   assert.equal(state.doc.toString(), '\\cite{one, two}');
 });
+
+
+test('file tree creation stays inside its directory, starts empty and never replaces existing content', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'texpro-create-'));
+  const outside = root + '-other'; fs.mkdirSync(outside);
+  t.after(() => { fs.rmSync(root,{recursive:true,force:true}); fs.rmSync(outside,{recursive:true,force:true}); });
+  const { createProjectFile, createProjectFolder } = require('../electron/services/tex.cjs');
+  const dir = createProjectFolder(root, root, 'chapters').path;
+  const file = createProjectFile(root, dir, 'draft');
+  assert.equal(file.path, path.join(dir, 'draft.tex'));
+  assert.equal(fs.readFileSync(file.path,'utf8'),'');
+  fs.writeFileSync(file.path,'keep');
+  assert.throws(() => createProjectFile(root, dir, 'draft'), /exists/);
+  assert.equal(fs.readFileSync(file.path,'utf8'),'keep');
+  for (const name of ['../escape','a/b','a\\b','bad:name','CON.tex','end.']) assert.throws(() => createProjectFile(root, dir, name), /Invalid/);
+  assert.throws(() => createProjectFile(root, outside, 'escape'), /outside/);
+  fs.symlinkSync(outside,path.join(root,'linked'),'dir');
+  assert.throws(() => createProjectFile(root, path.join(root,'linked'), 'escape'), /outside/);
+});

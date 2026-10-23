@@ -54,6 +54,33 @@ Second paragraph.
     await click(el('.welcome-project-row')); await wait(`!!document.querySelector('.cm-content')`);
     await js(`window.__continuityErrors=[];addEventListener('error',e=>__continuityErrors.push(e.message));addEventListener('unhandledrejection',e=>__continuityErrors.push(String(e.reason)));true`);
 
+    // Real native input: no browser prompt, correct parent, no clobber, immediate writing.
+    await js(`window.prompt=()=>{throw new Error('Browser prompt must not be used for tree creation')};true`);
+    await click(el('[data-testid="new-file"]')); await type('direct'); await key('Enter');
+    await wait(`document.querySelector('.titlebar-file-name').textContent==='direct.tex'&&!document.querySelector('[data-testid="tree-create"]')`);
+    assert.equal(fs.readFileSync(path.join(root, 'direct.tex'), 'utf8'), '');
+    await wait(`document.activeElement===document.querySelector('.cm-content')`); await type('Direct writing.'); await save();
+    assert.equal(fs.readFileSync(path.join(root, 'direct.tex'), 'utf8'), 'Direct writing.');
+    assert.equal(await js(`document.querySelector('.titlebar-main-file').title`), main);
+    await click(el('[data-testid="new-file"]')); await type('direct.tex'); await key('Enter');
+    await wait(`!!document.querySelector('#tree-create-error')`);
+    assert.equal(fs.readFileSync(path.join(root, 'direct.tex'), 'utf8'), 'Direct writing.');
+    for (const theme of ['paper','studio','night']) { await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)}`); await shot(`tree-create-${theme}`); }
+    await key('Escape'); await wait(`!document.querySelector('[data-testid="tree-create"]')`);
+    await click(el('[data-testid="new-folder"]')); await type('chapters'); await key('Enter');
+    await wait(`!document.querySelector('[data-testid="tree-create"]')`);
+    const folder = `[...document.querySelectorAll('.tree-dir>.tree-row')].find(e=>e.textContent.includes('chapters'))`;
+    const folderPoint = await js(`(()=>{const r=(${folder}).getBoundingClientRect();return{x:Math.round(r.x+50),y:Math.round(r.y+r.height/2)}})()`);
+    for (const type of ['mouseDown','mouseUp']) window.webContents.sendInputEvent({type,...folderPoint,button:'right',clickCount:1});
+    await click(el('.tree-menu button')); await type('child.tex'); await key('Enter');
+    await wait(`document.querySelector('.titlebar-file-name').textContent==='child.tex'&&!document.querySelector('[data-testid="tree-create"]')`);
+    assert.ok(fs.existsSync(path.join(root, 'chapters/child.tex')));
+    await click(el('[data-testid="new-file"]')); await type('notes.bib'); await key('Enter');
+    await wait(`document.querySelector('.titlebar-file-name').textContent==='notes.bib'&&!document.querySelector('[data-testid="tree-create"]')`);
+    assert.equal(fs.readFileSync(path.join(root,'notes.bib'),'utf8'),'');
+    await click(el('.tree-file[title^="main.tex"]'));
+    console.log('PASS inline file-tree creation, folder targeting, duplicate recovery, cancellation and main-file preservation');
+
     // Half-written math remains source through composition and becomes renderable only when valid.
     await endLine('Writing anchor.'); await type(' $\\frac{1}{');
     await js(`document.querySelector('.cm-content').dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}))`);

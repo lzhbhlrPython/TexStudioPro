@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Check,
+  X,
   BookMarked,
   BookOpen,
   Copy,
@@ -62,8 +64,8 @@ interface Props {
   onOpenFile: (path: string) => void;
   onRenameFile: (path: string) => void;
   onMoveDirectory: (path: string) => void;
-  onCreateFolder: (parent: string) => void;
-  onCreateFile: (parent: string) => void;
+  onCreateFolder: (parent: string, name: string) => Promise<void>;
+  onCreateFile: (parent: string, name: string) => Promise<void>;
   onMoveFile: (path: string) => void;
   onDeleteFile: (path: string) => void;
   onRenameFolder: (path: string) => void;
@@ -100,24 +102,48 @@ function containsPath(node: FileNode, path: string): boolean {
   return node.children.some((child) => containsPath(child, path));
 }
 
+interface TreeDraft { parent: string; kind: 'file' | 'folder'; name: string; busy: boolean; error: string }
+interface TreeCreationProps { draft: TreeDraft | null; onName: (name: string) => void; onSubmit: () => void; onCancel: () => void }
+function TreeCreation({ draft, onName, onSubmit, onCancel, depth = 0 }: TreeCreationProps & { depth?: number }) {
+  const { t } = useI18n();
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (!draft?.busy) input.current?.focus(); }, [draft?.parent, draft?.kind, draft?.busy]);
+  if (!draft) return null;
+  return <form className="tree-create" data-testid="tree-create" style={{ paddingLeft: 9 + depth * 13 }} onSubmit={event => { event.preventDefault(); onSubmit(); }} onKeyDown={event => {
+    if (event.nativeEvent.isComposing || draft.busy) return;
+    if (event.key === 'Enter' && event.target === input.current) { event.preventDefault(); event.stopPropagation(); onSubmit(); }
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel(); }
+  }}>
+    <div className="tree-create-row">{draft.kind === 'file' ? <FilePlus2 size={13} /> : <FolderPlus size={13} />}
+      <input ref={input} aria-label={t(draft.kind === 'file' ? 'New file name' : 'New folder name')} aria-invalid={Boolean(draft.error)} aria-describedby={draft.error ? 'tree-create-error' : undefined} placeholder={draft.kind === 'file' ? 'section.tex' : 'sections'} value={draft.name} disabled={draft.busy} onChange={event => onName(event.target.value)} />
+      <button type="submit" className="mini-btn" disabled={draft.busy || !draft.name.trim()} title={t('Create')} aria-label={t('Create')}>{draft.busy ? <Loader2 size={13} className="spin" /> : <Check size={13} />}</button>
+      <button type="button" className="mini-btn" disabled={draft.busy} onClick={onCancel} title={t('Cancel')} aria-label={t('Cancel')}><X size={13} /></button>
+    </div>
+    {draft.error && <div id="tree-create-error" className="tree-create-error" role="alert">{draft.error}</div>}
+  </form>;
+}
+
 function TreeItem({
   node,
   depth,
   activePath,
   onOpenFile,
   onNodeContextMenu,
+  creation,
 }: {
   node: FileNode;
   depth: number;
   activePath: string | null;
   onOpenFile: (path: string) => void;
   onNodeContextMenu: (node: FileNode, event: React.MouseEvent) => void;
+  creation: TreeCreationProps;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(() => Boolean(activePath && containsPath(node, activePath)));
   useEffect(() => {
     if (node.type === 'dir' && activePath && containsPath(node, activePath)) setOpen(true);
   }, [activePath, node]);
+  useEffect(() => { if (creation.draft?.parent === node.path) setOpen(true); }, [creation.draft?.parent, node.path]);
   if (node.type === 'dir') {
     return (
       <div className="tree-dir">
@@ -133,6 +159,7 @@ function TreeItem({
           <span>{node.name}</span>
           <span className="tree-count">{node.children?.length || 0}</span>
         </button>
+        {open && creation.draft?.parent === node.path && <TreeCreation {...creation} depth={depth + 1} />}
         {open && node.children?.map((child) => (
           <TreeItem
             key={child.path}
@@ -141,6 +168,7 @@ function TreeItem({
             activePath={activePath}
             onOpenFile={onOpenFile}
             onNodeContextMenu={onNodeContextMenu}
+            creation={creation}
           />
         ))}
       </div>
@@ -209,6 +237,28 @@ export function Sidebar({
   const [symbolFilter, setSymbolFilter] = useState('');
   const [symbolConfigOpen, setSymbolConfigOpen] = useState(false);
   const [treeMenu, setTreeMenu] = useState<{ node: FileNode; x: number; y: number } | null>(null);
+  const [draft, setDraft] = useState<TreeDraft | null>(null);
+  const draftRef = useRef(draft); draftRef.current = draft;
+  useEffect(() => { setDraft(null); setTreeMenu(null); }, [project?.root]);
+  const beginCreate = (parent: string, kind: 'file' | 'folder') => {
+    if (!project || draftRef.current?.busy) return;
+    setTreeMenu(null); setDraft({ parent, kind, name: '', busy: false, error: '' });
+  };
+  const submitCreate = async () => {
+    const current = draftRef.current; if (!current || current.busy || !current.name.trim()) return;
+    const pending = { ...current, busy: true, error: '' }; draftRef.current = pending; setDraft(pending);
+    try {
+      await (current.kind === 'file' ? onCreateFile : onCreateFolder)(current.parent, current.name.trim());
+      if (draftRef.current === pending) setDraft(null);
+    } catch (failure) {
+      if (draftRef.current !== pending) return;
+      const message = String(failure);
+      const reason = message.includes('already exists') ? t('A file or folder with this name already exists.') : message.includes('Invalid') ? t('Use a file name without path separators or reserved characters.') : t(current.kind === 'file' ? 'Could not create file' : 'Could not create folder');
+      setDraft({ ...current, error: reason, busy: false });
+    }
+  };
+  const creation: TreeCreationProps = { draft, onName: name => setDraft(current => current && { ...current, name, error: '' }), onSubmit: () => void submitCreate(), onCancel: () => { setDraft(null); document.querySelector<HTMLElement>('.cm-content')?.focus(); } };
+
   const [enabledModules, setEnabledModules] = useState<string[]>(() => {
     try {
       const stored = JSON.parse(localStorage.getItem('texpro.symbolModules') || 'null');
@@ -325,8 +375,8 @@ export function Sidebar({
             <div className="panel-heading">
               <span>{t('Project')}</span>
               <div className="panel-heading-actions">
-                <button className="mini-btn" onClick={() => onCreateFile(project?.root || '')} title={t('New file')}><Plus size={11} /></button>
-                <button className="mini-btn" onClick={() => onCreateFolder(project?.root || '')} title={t('New folder')}><FolderPlus size={11} /></button>
+                <button className="mini-btn" data-testid="new-file" onClick={() => beginCreate(project?.root || '', 'file')} title={t('New file')} aria-label={t('New file')}><Plus size={11} /></button>
+                <button className="mini-btn" data-testid="new-folder" onClick={() => beginCreate(project?.root || '', 'folder')} title={t('New folder')} aria-label={t('New folder')}><FolderPlus size={11} /></button>
                 <button className="mini-btn" onClick={onOpenFolder} title={t('Open another project (⌘O)')} aria-label={t('Open another project (⌘O)')}><FolderOpen size={11} /></button>
               </div>
             </div>
@@ -346,7 +396,11 @@ export function Sidebar({
               {!project.rootFile && <p role="status">{t(project.rootSource === 'ambiguous' ? 'Several documents found. Select the one to compile.' : project.rootSource === 'invalid' ? 'Main file is unavailable. Select a valid entry.' : 'Add a file containing \\documentclass to begin.')}</p>}
               {project.rootError && <details className="project-root-details"><summary>{t('Details')}</summary><p>{project.rootError}</p></details>}
             </div>}
-            <div className="file-tree">
+            <div className="file-tree" onContextMenu={event => {
+              if (!project) return; event.preventDefault();
+              setTreeMenu({ node: { name: project.name, path: project.root, relative: '.', type: 'dir', children: project.tree }, x: event.clientX, y: event.clientY });
+            }}>
+              {draft?.parent === project?.root && <TreeCreation {...creation} />}
               {project ? (
                 project.tree.length ? (
                   project.tree.map((node) => (
@@ -356,7 +410,8 @@ export function Sidebar({
                       depth={0}
                       activePath={activePath}
                       onOpenFile={onOpenFile}
-                      onNodeContextMenu={(node, event) => setTreeMenu({ node, x: event.clientX, y: event.clientY })}
+                      creation={creation}
+                      onNodeContextMenu={(node, event) => { event.stopPropagation(); setTreeMenu({ node, x: event.clientX, y: event.clientY }); }}
                     />
                   ))
                 ) : (
@@ -641,13 +696,15 @@ export function Sidebar({
             <div className="tree-menu-title">{treeMenu.node.type === 'dir' ? treeMenu.node.name : basename(treeMenu.node.path)}</div>
             {treeMenu.node.type === 'dir' ? (
               <>
-                <button onClick={() => { onCreateFile(treeMenu.node.path); setTreeMenu(null); }}><FilePlus2 size={12} /> {t('New file')}</button>
-                <button onClick={() => { onCreateFolder(treeMenu.node.path); setTreeMenu(null); }}><FolderPlus size={12} /> {t('New folder')}</button>
-                <button onClick={() => { onRenameFolder(treeMenu.node.path); setTreeMenu(null); }}><Pencil size={12} /> {t('Rename folder')}</button>
-                <button className="danger" onClick={() => { onDeleteFolder(treeMenu.node.path); setTreeMenu(null); }}><Trash2 size={12} /> {t('Delete folder')}</button>
+                <button onClick={() => { beginCreate(treeMenu.node.path, 'file'); }}><FilePlus2 size={12} /> {t('New file')}</button>
+                <button onClick={() => { beginCreate(treeMenu.node.path, 'folder'); }}><FolderPlus size={12} /> {t('New folder')}</button>
+                {treeMenu.node.path !== project?.root && <button onClick={() => { onRenameFolder(treeMenu.node.path); setTreeMenu(null); }}><Pencil size={12} /> {t('Rename folder')}</button>}
+                {treeMenu.node.path !== project?.root && <button className="danger" onClick={() => { onDeleteFolder(treeMenu.node.path); setTreeMenu(null); }}><Trash2 size={12} /> {t('Delete folder')}</button>}
               </>
             ) : (
               <>
+                <button onClick={() => beginCreate(dirname(treeMenu.node.path), 'file')}><FilePlus2 size={12} /> {t('New file')}</button>
+                <button onClick={() => beginCreate(dirname(treeMenu.node.path), 'folder')}><FolderPlus size={12} /> {t('New folder')}</button>
                 <button onClick={() => { onRenameFile(treeMenu.node.path); setTreeMenu(null); }}><Pencil size={12} /> {t('Rename file')}</button>
                 <button onClick={() => { onMoveFile(treeMenu.node.path); setTreeMenu(null); }}><FolderInput size={12} /> {t('Move file')}</button>
                 <button className="danger" onClick={() => { onDeleteFile(treeMenu.node.path); setTreeMenu(null); }}><Trash2 size={12} /> {t('Delete file')}</button>

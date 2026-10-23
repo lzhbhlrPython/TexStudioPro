@@ -39,3 +39,10 @@
 .cm-revision-added { text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
 .cm-writing-feedback { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 12px; color: var(--editor-text); font: 12px/1.6 var(--font-ui); white-space: pre-wrap; overflow-wrap: anywhere; }
 .cm-writing-feedback small { font-size: 11px; color: var(--text-muted); }
+
+.tree-create { padding: 5px 8px; }
+.tree-create-row { display: flex; align-items: center; gap: 5px; color: var(--text-muted); }
+.tree-create-row > svg { flex-shrink: 0; }
+.tree-create-row input { flex: 1; min-width: 0; width: 0; padding: 4px 5px; font: 12px/1.5 var(--font-ui); color: var(--text); background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius); }
+.tree-create-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tree-create-error { padding: 5px 0; color: var(--danger); font: 11px/1.5 var(--font-ui); overflow-wrap: anywhere; }

@@ -36,6 +36,8 @@ export function getLanguage(): Language {
 }
 
 const zh: Record<string, string> = {
+  'A file or folder with this name already exists.': '同名文件或文件夹已存在，请换一个名称。',
+  'Use a file name without path separators or reserved characters.': '请使用不含路径分隔符或保留字符的名称。',
   'Go to source': '查看引用原文',
   'No indexed source found': '尚未找到对应原文',
   'Writing notes': '写作笔记',

@@ -1314,33 +1314,26 @@ export default function App() {
     [pushToast, refreshProjectData, saveActive],
   );
 
-  const handleCreateFile = useCallback(async (parent: string) => {
-    const currentProject = projectRef.current;
-    if (!currentProject) return;
-    const name = window.prompt(tr('New file name'), 'section.tex');
-    if (!name) return;
-    try {
-      const created = await window.texpro.createProjectFile(currentProject.root, parent, name, `\\section{${name.replace(/\.tex$/i, '')}}\n\n`);
-      await refreshProjectData();
-      await openFile(created.path);
-      pushToast(tr('File created'), 'success', created.relative);
-    } catch (failure) {
-      pushToast(tr('Could not create file'), 'error', String(failure));
-    }
+  const handleCreateFile = useCallback(async (parent: string, name: string) => {
+    const currentProject = projectRef.current, generation = projectGeneration.current;
+    if (!currentProject) throw new Error('Project is not open');
+    const created = await window.texpro.createProjectFile(currentProject.root, parent, name, '');
+    if (generation !== projectGeneration.current) return;
+    await refreshProjectData();
+    if (generation !== projectGeneration.current) return;
+    await openFile(created.path);
+    if (generation !== projectGeneration.current) return;
+    setGotoRequest({ file: created.path, line: 1, column: 1, key: ++navigationGeneration.current });
+    pushToast(tr('File created'), 'success', created.relative);
   }, [openFile, pushToast, refreshProjectData]);
 
-  const handleCreateFolder = useCallback(async (parent: string) => {
-    const currentProject = projectRef.current;
-    if (!currentProject) return;
-    const name = window.prompt(tr('New folder name'), 'sections');
-    if (!name) return;
-    try {
-      const created = await window.texpro.createProjectFolder(currentProject.root, parent, name);
-      await refreshProjectData();
-      pushToast(tr('Folder created'), 'success', created.relative);
-    } catch (failure) {
-      pushToast(tr('Could not create folder'), 'error', String(failure));
-    }
+  const handleCreateFolder = useCallback(async (parent: string, name: string) => {
+    const currentProject = projectRef.current, generation = projectGeneration.current;
+    if (!currentProject) throw new Error('Project is not open');
+    const created = await window.texpro.createProjectFolder(currentProject.root, parent, name);
+    if (generation !== projectGeneration.current) return;
+    await refreshProjectData();
+    pushToast(tr('Folder created'), 'success', created.relative);
   }, [pushToast, refreshProjectData]);
 
   const handleMoveFile = useCallback(async (file: string) => {
@@ -2306,8 +2299,8 @@ export default function App() {
               onOpenFile={handleOpenFile}
               onRenameFile={(path) => void handleRenameFile(path)}
               onMoveDirectory={(path) => void handleMoveDirectory(path)}
-              onCreateFolder={(parent) => void handleCreateFolder(parent)}
-              onCreateFile={(parent) => void handleCreateFile(parent)}
+              onCreateFolder={handleCreateFolder}
+              onCreateFile={handleCreateFile}
               onMoveFile={(file) => void handleMoveFile(file)}
               onDeleteFile={(file) => void handleDeleteFile(file)}
               onRenameFolder={(dir) => void handleMoveDirectory(dir)}

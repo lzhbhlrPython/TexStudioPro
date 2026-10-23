@@ -1358,28 +1358,36 @@ function moveProjectFile(projectRoot, file, targetDir) {
   return { path: newPath, oldPath, updated, oldRelative: path.relative(root, oldPath), newRelative: path.relative(root, newPath) };
 }
 
-function createProjectFolder(projectRoot, parent, name) {
-  const root = path.resolve(projectRoot);
-  const parentDir = path.resolve(root, parent || '.');
-  if (!parentDir.startsWith(root)) throw new Error('Parent is outside the project');
+function projectCreationParent(projectRoot, parent) {
+  const root = path.resolve(projectRoot), dir = path.resolve(root, parent || '.');
+  if (dir !== root && !dir.startsWith(root + path.sep)) throw new Error('Parent is outside the project');
+  const realRoot = fs.realpathSync(root), realDir = fs.realpathSync(dir);
+  if (realDir !== realRoot && !realDir.startsWith(realRoot + path.sep)) throw new Error('Parent is outside the project');
+  if (!fs.statSync(realDir).isDirectory()) throw new Error('Parent is not a directory');
+  return dir;
+}
+
+function validCreationName(name) {
   const safe = String(name || '').trim();
-  if (!safe || /[\\/]/.test(safe) || safe === '.' || safe === '..') throw new Error('Invalid folder name');
-  const target = path.join(parentDir, safe);
+  if (!safe || /[\\/<>:"|?*\x00-\x1f]/.test(safe) || safe === '.' || safe === '..' || safe.endsWith('.') || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(safe)) throw new Error('Invalid file or folder name');
+  return safe;
+}
+
+function createProjectFolder(projectRoot, parent, name) {
+  const root = path.resolve(projectRoot), parentDir = projectCreationParent(root, parent);
+  const target = path.join(parentDir, validCreationName(name));
   if (fs.existsSync(target)) throw new Error('Folder already exists');
   fs.mkdirSync(target, { recursive: false });
   return { path: target, relative: path.relative(root, target) };
 }
 
 function createProjectFile(projectRoot, parent, name, content = '') {
-  const root = path.resolve(projectRoot);
-  const parentDir = path.resolve(root, parent || '.');
-  if (!parentDir.startsWith(root)) throw new Error('Parent is outside the project');
-  let safe = String(name || '').trim();
-  if (!safe || /[\\/]/.test(safe) || safe === '.' || safe === '..') throw new Error('Invalid file name');
+  const root = path.resolve(projectRoot), parentDir = projectCreationParent(root, parent);
+  let safe = validCreationName(name);
   if (!path.extname(safe)) safe += '.tex';
   const target = path.join(parentDir, safe);
   if (fs.existsSync(target)) throw new Error('File already exists');
-  fs.writeFileSync(target, content, 'utf8');
+  fs.writeFileSync(target, content, { encoding: 'utf8', flag: 'wx' });
   return { path: target, relative: path.relative(root, target) };
 }
 
