@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { TexArtwork } from './TexArtwork';
 import {
   BarChart3,
   Check,
@@ -344,7 +345,7 @@ export function PgfplotsStudio({ open, projectRoot, filePath, onClose, onInsert 
             <div className="chart-canvas-wrap pgf-preview">
               {busy && !previewUrl && <div className="tikz-placeholder"><Loader2 size={18} className="spin" /> {t('Typesetting diagram…')}</div>}
               {!busy && !previewUrl && !previewError && <div className="tikz-placeholder">{t('Preview will appear here.')}</div>}
-              {previewUrl && <img src={previewUrl} alt="pgfplots preview" />}
+              {previewUrl && <TexArtwork src={previewUrl} alt="pgfplots preview" />}
               {previewError && (
                 <div className="tikz-error-box">
                   <strong>{t('Could not render this diagram')}</strong>

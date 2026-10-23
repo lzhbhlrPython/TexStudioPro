@@ -2,7 +2,7 @@
   "name": "texstudio-pro",
   "version": "0.1.0",
   "private": true,
-  "description": "A visual-first LaTeX workbench that combines Typora's inline editing with TeXstudio's project, compile and SyncTeX workflow.",
+  "description": "A writing-first LaTeX editor that combines continuous inline writing with project, compile and SyncTeX tools.",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
@@ -21,7 +21,13 @@
     "package:linux": "npm run build && electron-builder --linux AppImage deb rpm --x64",
     "verify:release": "node scripts/verify-release.cjs",
     "test:regression": "node --test tests/*.test.cjs",
-    "test:ui": "node scripts/test-ui.cjs"
+    "test:ui": "node scripts/test-ui.cjs",
+    "test:music": "node scripts/test-music.cjs",
+    "test:music:ui": "node scripts/test-ui.cjs --music",
+    "test:writing:ui": "node scripts/test-ui.cjs --writing",
+    "test:assets:ui": "node scripts/test-ui.cjs --assets",
+    "test:continuity:ui": "node scripts/test-ui.cjs --continuity",
+    "test:flow:ui": "node scripts/test-flow-ui.cjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",
@@ -111,7 +117,8 @@
       "electron/services/history.cjs",
       "electron/services/git.cjs",
       "electron/services/project-files.cjs",
-      "electron/services/project-root.cjs"
+      "electron/services/project-root.cjs",
+      "electron/services/music.cjs"
     ],
     "nsis": {
       "artifactName": "${productName}-${version}-windows-${arch}-setup.${ext}"

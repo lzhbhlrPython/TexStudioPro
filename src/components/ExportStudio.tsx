@@ -53,7 +53,7 @@ export function ExportStudio({ open, source, name, onClose }: Props) {
             </div>
           </div>
           <div className="studio-header-actions">
-            <span className="studio-engine ok"><FileCode2 size={11} /> portable text</span>
+            <span className="studio-engine ok"><FileCode2 size={11} /> {t('Portable text')}</span>
             <button className="icon-btn" onClick={onClose} title={t('Close')}><X size={16} /></button>
           </div>
         </header>

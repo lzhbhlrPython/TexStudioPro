@@ -1,3 +1,4 @@
+import { requestText } from './TextRequest';
 import { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
@@ -141,7 +142,7 @@ export function TemplateGallery({
 
   const duplicate = async () => {
     if (!selected) return;
-    const name = window.prompt(t('Variant name'), `${selected.name} variant`);
+    const name = await requestText(t('Variant name'), `${selected.name} variant`);
     if (!name?.trim()) return;
     await onDuplicate(name.trim(), `${t('Based on')} ${selected.name}`, selected.content, selected.engine);
   };

@@ -1,3 +1,4 @@
+import { useI18n } from '../i18n';
 import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 
 export interface ToastItem {
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function Toasts({ toasts, onDismiss }: Props) {
+  const { t } = useI18n();
   return (
     <div className="toast-stack">
       {toasts.map((toast) => (
@@ -28,7 +30,7 @@ export function Toasts({ toasts, onDismiss }: Props) {
             <strong>{toast.message}</strong>
             {toast.detail && <small>{toast.detail}</small>}
           </div>
-          <button onClick={() => onDismiss(toast.id)} aria-label="Dismiss">
+          <button onClick={() => onDismiss(toast.id)} aria-label={t('Dismiss')}>
             <X size={12} />
           </button>
         </div>

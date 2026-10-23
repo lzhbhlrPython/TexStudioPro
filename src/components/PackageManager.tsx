@@ -88,7 +88,7 @@ export function PackageManager({ open, documentText, onClose, onApply }: Props) 
           </div>
           <div className="studio-header-actions">
             <span className="studio-engine ok">{setup.packages.length} {t('packages')}</span>
-            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Close')}><X size={16} /></button>
           </div>
         </header>
 

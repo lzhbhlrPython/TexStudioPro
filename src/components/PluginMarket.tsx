@@ -71,7 +71,7 @@ export function PluginMarket({ open, projectRoot, completions, onClose, onComple
           </div>
           <div className="studio-header-actions">
             <span className="studio-engine ok">{sources.length + mcpPlugins.length} {t('available')}</span>
-            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Close')}><X size={16} /></button>
           </div>
         </header>
         <div className="plugin-body">

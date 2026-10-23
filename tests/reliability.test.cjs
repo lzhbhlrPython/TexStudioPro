@@ -55,7 +55,7 @@ test('extracted services retain the main TeX service API', () => {
 function fixture(root) {
   for (const [name, content] of Object.entries({
     'package.json': '{}', 'electron/main.cjs': '', 'electron/preload.cjs': '', 'mcp/server.mjs': '',
-    'electron/services/tex.cjs': '', 'electron/services/history.cjs': '', 'electron/services/git.cjs': '', 'electron/services/project-files.cjs': '', 'electron/services/project-root.cjs': '',
+    'electron/services/music.cjs': '', 'electron/services/tex.cjs': '', 'electron/services/history.cjs': '', 'electron/services/git.cjs': '', 'electron/services/project-files.cjs': '', 'electron/services/project-root.cjs': '',
     'dist/index.html': '<script src="./assets/index-a.js"></script><link href="./assets/index-a.css" rel="stylesheet">',
     'dist/assets/index-a.js': '', 'dist/assets/index-a.css': '', 'dist/assets/pdf.worker-a.mjs': '',
   })) { fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true }); fs.writeFileSync(path.join(root, name), content); }

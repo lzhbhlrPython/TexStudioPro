@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 const { IGNORED_DIRS, isTextFile } = require('./project-files.cjs');
 const history = require('./history.cjs');
 const git = require('./git.cjs');
+const { musicSpacing } = require('./music.cjs');
 const { readConfig, resolveProjectRoot, resolveCompileRoot, rebaseConfiguredRoot } = require('./project-root.cjs');
 
 function walk(root, current = root, depth = 0, budget = { left: 1200 }) {
@@ -129,6 +130,16 @@ function collectProjectSymbols(root) {
   const environments = new Set();
   const packages = new Set();
   const images = [];
+  const references = [], bibliography = [], writingNotes = [];
+  const group = (text, at) => {
+    if (text[at] !== '{') return '';
+    let depth = 1, end = at + 1;
+    for (; end < text.length && depth; end++) {
+      if (text[end] === '\\') { end++; continue; }
+      if (text[end] === '{') depth++; else if (text[end] === '}') depth--;
+    }
+    return depth ? '' : text.slice(at + 1, end - 1);
+  };
   const visit = (dir, depth) => {
     if (depth > 5) return;
     let entries = [];
@@ -152,7 +163,23 @@ function collectProjectSymbols(root) {
         } catch {
           continue;
         }
-        for (const m of text.matchAll(/\\label\{([^}]+)\}/g)) labels.add(m[1]);
+        // Keep source locations and context so writing completion needs no separate manager.
+        const uncommented = text.replace(/(^|[^\\])%[^\n]*/gm, match => match.replace(/[^\n]/g, ' '));
+        for (const m of uncommented.matchAll(/\\label\{([^}]+)\}/g)) {
+          labels.add(m[1]);
+          const before = uncommented.slice(Math.max(0, m.index - 1800), m.index);
+          const heading = [...before.matchAll(/\\(?:caption|(?:sub)*section|chapter|part)\*?(?:\[[^\]]*\])?\s*\{/g)].at(-1);
+          const context = heading ? group(before, heading.index + heading[0].length - 1) : text.slice(Math.max(0, text.lastIndexOf('\n', m.index - 1) + 1), m.index);
+          references.push({ key: m[1], file: full, line: text.slice(0, m.index).split('\n').length, text: context.trim().slice(0, 300) });
+        }
+        let noteVerbatim = '';
+        text.split('\n').forEach((line, i) => {
+          if (noteVerbatim) { if (line.includes(`\\end{${noteVerbatim}}`)) noteVerbatim = ''; return; }
+          const begin = /^\s*\\begin\{(verbatim\*?|lstlisting|minted)\}/.exec(line);
+          if (begin) { noteVerbatim = begin[1]; return; }
+          const note = /^\s*%\s*(TODO|FIXME|NOTE|DONE)\s*:\s*(.*)$/i.exec(line);
+          if (note) writingNotes.push({ file: full, line: i + 1, text: note[2], done: note[1].toUpperCase() === 'DONE' });
+        });
         for (const m of text.matchAll(/\\begin\{([^}]+)\}/g)) environments.add(m[1]);
         for (const m of text.matchAll(/\\bibitem(?:\[[^\]]*\])?\{([^}]+)\}/g)) citations.add(m[1]);
         for (const m of text.matchAll(/\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}/g)) {
@@ -175,7 +202,17 @@ function collectProjectSymbols(root) {
         } catch {
           continue;
         }
-        for (const m of text.matchAll(/@\w+\s*\{\s*([^,\s]+)\s*,/g)) citations.add(m[1]);
+        for (const m of text.matchAll(/@(?!comment\b|string\b|preamble\b)\w+\s*\{\s*([^,\s]+)\s*,/gi)) {
+          citations.add(m[1]);
+          const entry = group(text, m.index + m[0].indexOf('{'));
+          const field = name => {
+            const value = new RegExp('\\b' + name + '\\s*=\\s*([{"]|[^,\\s}]+)', 'i').exec(entry);
+            if (!value) return '';
+            const at = value.index + value[0].length - 1;
+            return value[1] === '{' ? group(entry, at) : value[1] === '"' ? entry.slice(at + 1).split('"')[0] : value[1];
+          };
+          bibliography.push({ key: m[1], file: full, line: text.slice(0, m.index).split('\n').length, title: field('title'), author: field('author'), year: field('year') });
+        }
       }
     }
   };
@@ -186,6 +223,7 @@ function collectProjectSymbols(root) {
     environments: [...environments].sort(),
     packages: [...packages].sort(),
     images,
+    references, bibliography, writingNotes,
   };
 }
 
@@ -277,14 +315,16 @@ async function runLatexOnce(engine, args, cwd, timeoutMs) {
   });
 }
 
-async function renderTikz({ projectRoot, filePath, source }) {
+async function renderTikz({ projectRoot, filePath, source, preamble: documentBuffer, preferPdf = false }) {
   const root = path.resolve(projectRoot || '');
   if (!fs.existsSync(root)) return { ok: false, error: 'Project is not open' };
   const cleanSource = String(source || '').trim();
   if (!cleanSource || cleanSource.length > 250000) return { ok: false, error: 'Empty or oversized TikZ source' };
   let documentText = '';
   try {
-    if (filePath && fs.existsSync(filePath)) documentText = fs.readFileSync(filePath, 'utf8');
+    const main = resolveProjectRoot(root).rootFile || filePath;
+    if (typeof documentBuffer === 'string' && documentBuffer.length <= 2000000) documentText = documentBuffer;
+    else if (main && fs.existsSync(main)) documentText = fs.readFileSync(main, 'utf8');
   } catch {
     // use empty preamble
   }
@@ -332,7 +372,10 @@ async function renderTikz({ projectRoot, filePath, source }) {
   const texPath = path.join(dir, base + '.tex');
   const pdfPath = path.join(dir, base + '.pdf');
   const pngPath = path.join(dir, base + '.png');
-  const svgPath = path.join(dir, base + '.svg');
+  const readyPath = pdfPath + '.ready';
+  if (preferPdf && fs.existsSync(pdfPath) && (fs.existsSync(readyPath) || fs.existsSync(pngPath))) {
+    return { ok: true, pdfPath, engine, cacheKey, cached: true, format: 'pdf' };
+  }
   if (fs.existsSync(pngPath)) {
     return { ok: true, svgPath: pngPath, engine, cacheKey, cached: true, format: 'png' };
   }
@@ -372,6 +415,7 @@ async function renderTikz({ projectRoot, filePath, source }) {
       30000,
     );
     if (fallbackCompile.code === 0 && fs.existsSync(fallbackPdf)) {
+      if (preferPdf) return { ok: true, pdfPath: fallbackPdf, engine, cacheKey, cached: false, format: 'pdf', fallback: true, warning: firstError || 'Rendered with a minimal preamble because the project preamble failed.' };
       const fallbackRaster = await runLatexOnce(
         'sips',
         ['-s', 'format', 'png', '--resampleWidth', '1800', fallbackPdf, '--out', fallbackPng],
@@ -399,6 +443,8 @@ async function renderTikz({ projectRoot, filePath, source }) {
       engine,
     };
   }
+  fs.writeFileSync(readyPath, '', 'utf8');
+  if (preferPdf) return { ok: true, pdfPath, engine, cacheKey, cached: false, format: 'pdf' };
   const raster = await runLatexOnce(
     'sips',
     ['-s', 'format', 'png', '--resampleWidth', '1800', pdfPath, '--out', pngPath],
@@ -560,7 +606,7 @@ function deleteAsset(projectRoot, file) {
   if (!resolved.startsWith(root + path.sep)) throw new Error('Asset is outside the project');
   const ext = path.extname(resolved).toLowerCase();
   if (!ASSET_EXTENSIONS.has(ext)) throw new Error('Not an asset file');
-  fs.unlinkSync(resolved);
+  deleteProjectFile(root, resolved);
   return collectAssets(root);
 }
 
@@ -1318,28 +1364,36 @@ function moveProjectFile(projectRoot, file, targetDir) {
   return { path: newPath, oldPath, updated, oldRelative: path.relative(root, oldPath), newRelative: path.relative(root, newPath) };
 }
 
-function createProjectFolder(projectRoot, parent, name) {
-  const root = path.resolve(projectRoot);
-  const parentDir = path.resolve(root, parent || '.');
-  if (!parentDir.startsWith(root)) throw new Error('Parent is outside the project');
+function projectCreationParent(projectRoot, parent) {
+  const root = path.resolve(projectRoot), dir = path.resolve(root, parent || '.');
+  if (dir !== root && !dir.startsWith(root + path.sep)) throw new Error('Parent is outside the project');
+  const realRoot = fs.realpathSync(root), realDir = fs.realpathSync(dir);
+  if (realDir !== realRoot && !realDir.startsWith(realRoot + path.sep)) throw new Error('Parent is outside the project');
+  if (!fs.statSync(realDir).isDirectory()) throw new Error('Parent is not a directory');
+  return dir;
+}
+
+function validCreationName(name) {
   const safe = String(name || '').trim();
-  if (!safe || /[\\/]/.test(safe) || safe === '.' || safe === '..') throw new Error('Invalid folder name');
-  const target = path.join(parentDir, safe);
+  if (!safe || /[\\/<>:"|?*\x00-\x1f]/.test(safe) || safe === '.' || safe === '..' || safe.endsWith('.') || /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(safe)) throw new Error('Invalid file or folder name');
+  return safe;
+}
+
+function createProjectFolder(projectRoot, parent, name) {
+  const root = path.resolve(projectRoot), parentDir = projectCreationParent(root, parent);
+  const target = path.join(parentDir, validCreationName(name));
   if (fs.existsSync(target)) throw new Error('Folder already exists');
   fs.mkdirSync(target, { recursive: false });
   return { path: target, relative: path.relative(root, target) };
 }
 
 function createProjectFile(projectRoot, parent, name, content = '') {
-  const root = path.resolve(projectRoot);
-  const parentDir = path.resolve(root, parent || '.');
-  if (!parentDir.startsWith(root)) throw new Error('Parent is outside the project');
-  let safe = String(name || '').trim();
-  if (!safe || /[\\/]/.test(safe) || safe === '.' || safe === '..') throw new Error('Invalid file name');
+  const root = path.resolve(projectRoot), parentDir = projectCreationParent(root, parent);
+  let safe = validCreationName(name);
   if (!path.extname(safe)) safe += '.tex';
   const target = path.join(parentDir, safe);
   if (fs.existsSync(target)) throw new Error('File already exists');
-  fs.writeFileSync(target, content, 'utf8');
+  fs.writeFileSync(target, content, { encoding: 'utf8', flag: 'wx' });
   return { path: target, relative: path.relative(root, target) };
 }
 
@@ -1742,6 +1796,7 @@ function parseWarningsFromStdout(stdout) {
 }
 
 let activeCompilation = null;
+const compilations = new Map();
 
 function killProcessTree(child, signal) {
   if (!child) return;
@@ -1761,18 +1816,16 @@ function killProcessTree(child, signal) {
 }
 
 function cancelCompilation(runId) {
-  if (!activeCompilation) return { ok: false, error: 'No compilation is running' };
-  if (runId && activeCompilation.runId && activeCompilation.runId !== runId) {
-    return { ok: false, error: 'Run id does not match the active compilation' };
-  }
-  activeCompilation.cancelled = true;
-  killProcessTree(activeCompilation.child, 'SIGTERM');
-  const child = activeCompilation.child;
+  const controller = runId ? compilations.get(runId) : activeCompilation;
+  if (!controller) return { ok: false, error: 'No matching compilation is running' };
+  controller.cancelled = true;
+  killProcessTree(controller.child, 'SIGTERM');
+  const child = controller.child;
   setTimeout(() => killProcessTree(child, 'SIGKILL'), 2200);
   return { ok: true };
 }
 
-async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeoutMs = 180000, runId, buildDir: buildDirOption, onData }) {
+async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeoutMs = 180000, runId, buildDir: buildDirOption, onData, isolated = false }) {
   const started = Date.now();
   let rootFile;
   try { rootFile = resolveCompileRoot(projectRoot, activeFile, fallbackRoot); }
@@ -1815,8 +1868,12 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
   }
 
   const controller = { runId: runId || String(Date.now()), child: null, cancelled: false };
-  activeCompilation = controller;
-  const result = await new Promise((resolve) => {
+  if (!isolated) activeCompilation = controller;
+  compilations.set(controller.runId, controller);
+  const mx1Path = path.join(buildDir, path.basename(rootFile, path.extname(rootFile)) + '.mx1');
+  let beforeMx1 = null;
+  try { beforeMx1 = fs.readFileSync(mx1Path, 'utf8'); } catch { /* first music build */ }
+  const runStage = (command, stageArgs, cwd) => new Promise((resolve) => {
     let child;
     let timer = null;
     let stdout = '';
@@ -1827,12 +1884,12 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      if (activeCompilation === controller) activeCompilation = null;
       resolve({ code, signal, stdout, stderr, error, timedOut, cancelled: controller.cancelled });
     };
     try {
-      child = spawn(latexmk, args, {
-        cwd: projectRoot,
+      if (controller.cancelled) { finish(null, null, null); return; }
+      child = spawn(resolveTexBinary(command), stageArgs, {
+        cwd,
         env: texEnvironment(projectRoot),
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: process.platform !== 'win32',
@@ -1847,7 +1904,7 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
       timedOut = true;
       killProcessTree(child, 'SIGTERM');
       setTimeout(() => killProcessTree(child, 'SIGKILL'), 2500);
-    }, timeoutMs);
+    }, Math.max(1, timeoutMs - (Date.now() - started)));
 
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
@@ -1862,6 +1919,34 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
     child.on('error', (error) => finish(null, null, error));
     child.on('close', (code, signal) => finish(code, signal, null));
   });
+
+  let result;
+  try {
+    result = await runStage(latexmk, args, projectRoot);
+    if (result.code === 0 && !result.cancelled && !result.timedOut) {
+      const spacing = await musicSpacing({ buildDir, jobName: path.basename(rootFile, path.extname(rootFile)), before: beforeMx1,
+        resolveScript: async () => {
+          const found = await runLatexOnce('kpsewhich', ['musixflx.lua'], projectRoot, 10000);
+          return found.code === 0 ? found.stdout.trim() : '';
+        },
+        run: (command, stageArgs, cwd) => {
+          onData?.({ stream: 'meta', text: '$ texlua musixflx.lua — music spacing\n', rootFile });
+          return runStage(command, stageArgs, cwd);
+        },
+      });
+      if (spacing) {
+        const firstOutput = result.stdout + '\n' + (spacing.stdout || '');
+        if (spacing.code === 0 && !controller.cancelled && !spacing.timedOut) {
+          onData?.({ stream: 'meta', text: '$ latexmk -g — apply music spacing\n', rootFile });
+          result = await runStage(latexmk, ['-g', ...args], projectRoot);
+          result.stdout = firstOutput + '\n' + result.stdout;
+        } else result = { ...result, ...spacing, stdout: firstOutput, cancelled: controller.cancelled };
+      }
+    }
+  } finally {
+    compilations.delete(controller.runId);
+    if (activeCompilation === controller) activeCompilation = null;
+  }
 
   let log = '';
   try {
@@ -1904,6 +1989,28 @@ async function runCompile({ projectRoot, activeFile, fallbackRoot, engine, timeo
     stdout: result.stdout.slice(-12000),
     stderr: result.stderr.slice(-4000),
   };
+}
+
+async function renderMusicPreview({ projectRoot, source, runId }) {
+  if (typeof source !== 'string' || source.length > 200000 || !/\\documentclass\b/.test(source)) throw new Error('Invalid music preview source');
+  const key = crypto.createHash('sha256').update(source).digest('hex').slice(0, 24);
+  const cache = path.join(projectRoot, '.texpro', 'music-previews');
+  fs.mkdirSync(cache, { recursive: true });
+  const pdf = path.join(cache, key + '.pdf');
+  if (fs.existsSync(pdf)) return { ok: true, bytes: new Uint8Array(fs.readFileSync(pdf)) };
+  // Separate jobs never share auxiliary files. Publish only successfully completed PDFs.
+  const work = fs.mkdtempSync(path.join(cache, 'build-'));
+  try {
+    fs.writeFileSync(path.join(work, 'main.tex'), source, 'utf8');
+    const result = await runCompile({ projectRoot: work, engine: /[\u3400-\u9fff]/.test(source) ? 'xelatex' : 'pdflatex', runId, timeoutMs: 45000, isolated: true });
+    if (!result.ok) return { ok: false, error: result.error || result.diagnostics.find(d => d.severity === 'error')?.message || 'Music typesetting failed', log: result.log.slice(-6000) };
+    const completed = path.join(work, 'complete.pdf');
+    fs.copyFileSync(result.pdfPath, completed);
+    fs.renameSync(completed, pdf);
+    return { ok: true, bytes: new Uint8Array(fs.readFileSync(pdf)) };
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
 }
 
 function parseSynctexValue(text, key) {
@@ -1980,6 +2087,7 @@ async function synctexInverse({ projectRoot, pdfFile, page, x, y }) {
 }
 
 module.exports = {
+  renderMusicPreview,
   ...history,
   ...git,
   openProject,

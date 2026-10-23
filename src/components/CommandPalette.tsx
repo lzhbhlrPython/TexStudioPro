@@ -1,3 +1,4 @@
+import { formatShortcut } from '../i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, CornerDownLeft } from 'lucide-react';
@@ -43,7 +44,7 @@ export function CommandPalette({ open, actions, onClose }: Props) {
     const needle = query.trim().toLowerCase();
     if (!needle) return actions;
     return actions.filter((action) => {
-      const text = [action.label, t(action.label), action.detail, action.group, t(action.group || ''), action.keywords].filter(Boolean).join(' ').toLowerCase();
+      const text = [action.label, t(action.label), action.detail, t(action.detail || ''), action.group, t(action.group || ''), action.keywords].filter(Boolean).join(' ').toLowerCase();
       return needle.split(/\s+/).every((part) => text.includes(part));
     });
   }, [actions, query, language]);
@@ -119,9 +120,9 @@ export function CommandPalette({ open, actions, onClose }: Props) {
                   <span className="palette-icon"><Icon size={15} /></span>
                   <span className="palette-text">
                     <strong>{t(action.label)}</strong>
-                    {action.detail && <small>{action.detail}</small>}
+                    {action.detail && <small>{t(action.detail)}</small>}
                   </span>
-                  {action.shortcut && <kbd>{action.shortcut}</kbd>}
+                  {action.shortcut && <kbd>{formatShortcut(action.shortcut)}</kbd>}
                   {index === active && <CornerDownLeft size={12} className="palette-enter" />}
                 </button>
               </div>

@@ -88,7 +88,7 @@ export function ImportStudio({ open, hasProject, onClose, onInsert, onCreate }: 
             </div>
           </div>
           <div className="studio-header-actions">
-            <span className="studio-engine ok"><FileCode2 size={11} /> portable .tex</span>
+            <span className="studio-engine ok"><FileCode2 size={11} /> {t('Portable .tex')}</span>
             <button className="icon-btn" onClick={onClose} title={t('Close')}><X size={16} /></button>
           </div>
         </header>

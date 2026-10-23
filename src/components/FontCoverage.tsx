@@ -57,7 +57,7 @@ export function FontCoverage({ open, projectRoot, onClose, onOpen }: {
           </div>
           <div className="studio-header-actions">
             <button className="secondary-btn" onClick={() => void scan()} disabled={loading}><RefreshCw size={12} className={loading ? 'spin' : ''} /> {t('Re-scan')}</button>
-            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Close')}><X size={16} /></button>
           </div>
         </header>
 

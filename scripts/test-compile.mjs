@@ -80,7 +80,8 @@ async function compileSample(name, text) {
   }
 }
 
-await compileSample('ctex', String.raw`\documentclass[UTF8,11pt]{ctexart}
+// Use fonts shipped with TeX instead of a platform's optional system CJK fonts.
+await compileSample('ctex', String.raw`\documentclass[UTF8,fontset=fandol,11pt]{ctexart}
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{amsmath,amssymb}
 \begin{document}

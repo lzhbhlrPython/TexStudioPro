@@ -68,7 +68,7 @@ export function BackupPanel({ open, projectRoot, onClose, onReveal }: Props) {
           </div>
           <div className="studio-header-actions">
             <span className="studio-engine ok">{t('Source + assets')}</span>
-            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Close')}><X size={16} /></button>
           </div>
         </header>
 

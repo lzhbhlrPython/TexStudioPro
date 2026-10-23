@@ -83,7 +83,7 @@ export function ProjectGraph({ open, projectRoot, onClose, onOpen }: Props) {
           <div className="studio-header-actions">
             <span className="studio-engine ok">{nodes.length} {t('nodes')} · {edges.length} {t('edges')}</span>
             <button className="secondary-btn" onClick={() => void load()} disabled={loading}><RefreshCw size={12} className={loading ? 'spin' : ''} /> {t('Re-scan')}</button>
-            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Close')}><X size={16} /></button>
           </div>
         </header>
 

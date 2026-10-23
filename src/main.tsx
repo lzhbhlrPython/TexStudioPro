@@ -11,3 +11,7 @@ if (!root) throw new Error('Missing #root');
 createRoot(root).render(<App />);
 
 import './styles/welcome.css';
+
+import './styles/music.css';
+import './styles/writing.css';
+import './styles/artwork.css';

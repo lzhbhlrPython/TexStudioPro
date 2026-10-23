@@ -1,3 +1,4 @@
+import { requestText } from './TextRequest';
 import { useEffect, useMemo, useState } from 'react';
 import {
   BookMarked,
@@ -164,7 +165,8 @@ export function BibManager({
     if (!file) {
       if (!projectRoot) return;
       file = `${projectRoot}/references.bib`;
-      await window.texpro.writeFile(file, '');
+      if (await window.texpro.fileExists(file)) { setNotice(t('A file with this name already exists.')); return; }
+      try { await window.texpro.createProjectFile(projectRoot, projectRoot, 'references.bib', ''); } catch (error) { setNotice(String(error)); return; }
       setFiles((current) => [...current, file]);
       setSelectedFile(file);
     }
@@ -192,7 +194,8 @@ export function BibManager({
     if (!projectRoot) return null;
     const file = `${projectRoot}/references.bib`;
     if (!files.includes(file)) {
-      await window.texpro.writeFile(file, '');
+      if (await window.texpro.fileExists(file)) { setNotice(t('A file with this name already exists.')); return null; }
+    try { await window.texpro.createProjectFile(projectRoot, projectRoot, 'references.bib', ''); } catch (error) { setNotice(String(error)); return null; }
       setFiles((current) => [...current, file]);
     }
     setSelectedFile(file);
@@ -220,7 +223,7 @@ export function BibManager({
   };
 
   const importOnline = async () => {
-    const identifier = window.prompt(t('DOI or arXiv ID'), '');
+    const identifier = await requestText(t('DOI or arXiv ID'), '');
     if (!identifier) return;
     try {
       const result = await window.texpro.lookupBibtex(identifier);
@@ -307,11 +310,12 @@ export function BibManager({
 
   const createBibFile = async () => {
     if (!projectRoot) return;
-    const name = window.prompt(t('New .bib file name'), 'references');
+    const name = await requestText(t('New .bib file name'), 'references');
     if (!name) return;
     const safe = name.replace(/[\\/:*?"<>|]/g, '-').replace(/\.bib$/i, '');
     const file = `${projectRoot}/${safe}.bib`;
-    await window.texpro.writeFile(file, '');
+    if (await window.texpro.fileExists(file)) { setNotice(t('A file with this name already exists.')); return; }
+    try { await window.texpro.createProjectFile(projectRoot, projectRoot, safe + '.bib', ''); } catch (error) { setNotice(String(error)); return; }
     setFiles((current) => (current.includes(file) ? current : [...current, file]));
     setSelectedFile(file);
     setSelectedKey('');

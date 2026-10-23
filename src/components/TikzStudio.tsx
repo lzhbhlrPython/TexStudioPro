@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { TexArtwork } from './TexArtwork';
 import {
   Code2,
   Loader2,
@@ -175,7 +176,7 @@ export function TikzStudio({ open, projectRoot, filePath, initialSource, onClose
               {!busy && !previewUrl && !error && (
                 <div className="tikz-placeholder">{t('Preview will appear here.')}</div>
               )}
-              {previewUrl && <img src={previewUrl} alt="TikZ preview" />}
+              {previewUrl && <TexArtwork src={previewUrl} alt="TikZ preview" />}
               {error && (
                 <div className="tikz-error-box">
                   <strong>{t('Could not render this diagram')}</strong>

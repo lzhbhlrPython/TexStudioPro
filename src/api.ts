@@ -41,6 +41,7 @@ export interface TexProApi {
   runProjectAction: (root: string, action: { command: string; args: string[]; cwd?: string; env?: Record<string,string> }, rootFile: string) => Promise<{ ok: boolean; code: number | null; stdout: string; stderr: string; timedOut: boolean }>;
   checkTexAssets: (packages: string[], classes: string[]) => Promise<{ packages: Record<string, { installed: boolean; path: string }>; classes: Record<string, { installed: boolean; path: string }> }>;
   gitStatus: (root: string) => Promise<{ initialized: boolean; branch: string; changes: Array<{ status: string; file: string }>; ahead: number; behind: number; commits: Array<{ hash: string; subject: string }> }>;
+  gitReadFile: (root: string, revision: string, file: string) => Promise<string>;
   gitInit: (root: string) => Promise<{ ok: boolean }>;
   gitCommit: (root: string, message: string) => Promise<{ ok: boolean; output: string }>;
   gitPull: (root: string) => Promise<{ ok: boolean; output: string }>;
@@ -57,6 +58,7 @@ export interface TexProApi {
   deleteSecret: (name: string) => Promise<{ ok: boolean }>;
   lookupBibtex: (identifier: string) => Promise<{ entry: { type: string; key: string; fields: Record<string, string> }; source: string }>;
   chooseBibFile: () => Promise<{ path: string; content: string; name: string } | null>;
+  renderMusicPreview: (payload: { projectRoot: string; source: string; runId: string }) => Promise<{ ok: boolean; bytes?: Uint8Array; error?: string; log?: string }>;
   renderTemplatePreview: (payload: { source: string; engine: string }) => Promise<{ ok: boolean; path?: string; cached?: boolean; dataUrl?: string; error?: string }>;
   saveUserTemplate: (payload: {
     name: string;
@@ -71,9 +73,11 @@ export interface TexProApi {
     filePath: string;
     source: string;
     preamble?: string;
+    preferPdf?: boolean;
   }) => Promise<{
     ok: boolean;
     svgPath?: string;
+    pdfPath?: string;
     engine?: string;
     cacheKey?: string;
     cached?: boolean;
