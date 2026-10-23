@@ -9,6 +9,7 @@ import katex from 'katex';
 import { assetUrl, dirname, joinPath, parseDocumentTitle } from '../lib/latex';
 import { t } from '../i18n';
 import { themeTexArtwork } from '../lib/texArtwork';
+import { rasterizeTexPdf } from '../lib/texPdfArtwork';
 import { reviewedRanges } from './writingReview';
 
 export const refreshWritingPreview = StateEffect.define<null>();
@@ -418,6 +419,7 @@ class TexLogoWidget extends LatexWidget {
 interface TikzResult {
   ok: boolean;
   svgPath?: string;
+  pdfPath?: string;
   error?: string;
   log?: string;
   engine?: string;
@@ -431,7 +433,7 @@ function requestTikz(source: string, projectRoot: string, filePath: string, prea
   const cached = tikzRequests.get(key);
   if (cached) return cached;
   const request: Promise<TikzResult> = window.texpro
-    .renderTikz({ projectRoot, filePath, source, preamble })
+    .renderTikz({ projectRoot, filePath, source, preamble, preferPdf: true })
     .catch((error): TikzResult => ({ ok: false, error: String(error) }))
     .then(result => { if (!result.ok) tikzRequests.delete(key); return result; });
   if (tikzRequests.size >= 128) tikzRequests.delete(tikzRequests.keys().next().value!);
@@ -441,6 +443,7 @@ function requestTikz(source: string, projectRoot: string, filePath: string, prea
 
 class TikzWidget extends LatexWidget {
   private timer?: ReturnType<typeof setTimeout>;
+  private previewAbort?: AbortController;
   constructor(
     readonly source: string,
     readonly projectRoot: string,
@@ -492,42 +495,48 @@ class TikzWidget extends LatexWidget {
     wrap.append(header, body);
     this.bind(body, view);
 
-    this.timer = setTimeout(() => requestTikz(this.source, this.projectRoot, this.filePath, this.preamble).then((result) => {
-      if (!body.isConnected) return;
-      if (result.ok && result.svgPath) {
+    const abort = new AbortController(); this.previewAbort = abort;
+    const showFailure = (result: TikzResult) => {
+      if (abort.signal.aborted || !body.isConnected) return;
+      const message = document.createElement('div');
+      message.className = 'cm-tikz-error';
+      message.textContent = result.error || t('TikZ rendering failed');
+      body.replaceChildren(message);
+      status.textContent = 'error'; status.classList.add('failed');
+      if (result.log) {
+        const details = document.createElement('details'); details.className = 'cm-tikz-log';
+        const summary = document.createElement('summary'); summary.textContent = t('Show log');
+        const pre = document.createElement('pre'); pre.textContent = result.log.slice(-3000);
+        details.append(summary, pre); wrap.appendChild(details);
+      }
+      view.requestMeasure();
+    };
+    this.timer = setTimeout(() => { void requestTikz(this.source, this.projectRoot, this.filePath, this.preamble).then(async (result) => {
+      if (abort.signal.aborted || !body.isConnected) return;
+      if (result.ok && (result.pdfPath || result.svgPath)) {
         const img = document.createElement('img');
         img.crossOrigin = 'anonymous';
         const frame = document.createElement('span'); frame.className = 'tex-artwork'; frame.dataset.artwork = 'document-color';
-        img.addEventListener('load', () => { themeTexArtwork(frame, img); view.requestMeasure(); });
-        img.src = assetUrl(result.svgPath);
+        if (result.pdfPath) {
+          const style = getComputedStyle(view.contentDOM);
+          const writingWidth = view.contentDOM.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+          const rendered = await rasterizeTexPdf(result.pdfPath, { width: Math.min(this.inline ? 360 : Infinity, writingWidth || 650), height: this.inline ? 150 : this.previewOnly ? 250 : 340 }, abort.signal);
+          if (abort.signal.aborted || !body.isConnected) return;
+          img.style.width = `${rendered.width}px`;
+          img.src = rendered.src;
+        } else img.src = assetUrl(result.svgPath!);
+        img.addEventListener('load', () => { if (!abort.signal.aborted && body.isConnected) { themeTexArtwork(frame, img); view.requestMeasure(); } });
         img.alt = 'TikZ diagram';
         img.loading = 'lazy';
-        img.addEventListener('error', () => {
-          body.innerHTML = `<div class="cm-tikz-error">${t('Could not load the rendered diagram.')}</div>`;
-        });
+        img.addEventListener('error', () => showFailure({ ok: false, error: t('Could not load the rendered diagram.') }));
         frame.appendChild(img); body.replaceChildren(frame);
         status.textContent = result.cached ? 'cached' : result.engine || 'ready';
         status.classList.add('ready');
       } else {
-        const message = document.createElement('div');
-        message.className = 'cm-tikz-error';
-        message.textContent = result.error || t('TikZ rendering failed');
-        body.replaceChildren(message);
-        status.textContent = 'error';
-        status.classList.add('failed');
-        if (result.log) {
-          const details = document.createElement('details');
-          details.className = 'cm-tikz-log';
-          const summary = document.createElement('summary');
-          summary.textContent = t('Show log');
-          const pre = document.createElement('pre');
-          pre.textContent = result.log.slice(-3000);
-          details.append(summary, pre);
-          wrap.appendChild(details);
-        }
+        showFailure(result);
       }
       view.requestMeasure();
-    }), 600);
+    }).catch(error => showFailure({ ok: false, error: String(error) })); }, 600);
 
     return wrap;
   }
@@ -535,7 +544,7 @@ class TikzWidget extends LatexWidget {
   ignoreEvent() {
     return false;
   }
-  destroy() { clearTimeout(this.timer); }
+  destroy() { clearTimeout(this.timer); this.previewAbort?.abort(); }
 }
 
 class ClearWidget extends WidgetType {

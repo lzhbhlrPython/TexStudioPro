@@ -225,7 +225,8 @@ export class WritingTableWidget extends WidgetType {
     const offset = literalSeparators((cell.textContent || '').slice(0, caretOffset(cell))).length;
     view.dispatch({
       changes: { from: source.from, to: source.to, insert },
-      selection: { anchor: source.from + offset }, effects: view.scrollSnapshot(),
+      selection: { anchor: source.from + offset },
+      effects: [view.scrollSnapshot(), writeTableCell.of({ from: table.from, to: table.to + insert.length - (source.to - source.from), row, col })],
       annotations: Transaction.userEvent.of('input.table'),
     });
     if (!dom.isConnected) focusWriting(view, source.from + offset); // Unsupported/incomplete TeX stays editable in place.

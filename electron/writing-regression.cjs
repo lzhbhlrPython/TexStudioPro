@@ -78,8 +78,13 @@ Writing after the table.
     await wait(`!!document.querySelector('.cm-table-cell[data-row="0"][data-col="1"] .katex .mfrac')`);
     console.log('PASS nested formula rendering in headings, captions, formatted table cells and exact source entry');
     await click('.cm-table-cell[data-row="1"][data-col="0"]');
-    await key('Right', ['meta']); await type(' revised');
+    assert.equal(await js(`document.activeElement?.dataset.row+':'+document.activeElement?.dataset.col`), '1:0', 'Click must enter the requested cell');
+    await key('Right', ['meta']);
+    assert.equal(await js(`document.activeElement?.dataset.row+':'+document.activeElement?.dataset.col`), '1:0', 'End-of-cell navigation must retain focus');
+    await type(' revised');
+    assert.equal(await js(`document.activeElement?.dataset.row+':'+document.activeElement?.dataset.col`), '1:0', 'Typing must retain cell focus');
     await key('Tab'); await key('Right', ['meta']); await type(' & 50%');
+    assert.equal(await js(`document.activeElement?.dataset.row+':'+document.activeElement?.dataset.col`), '1:1', 'Tab and typing must retain the next cell');
     await key('Tab');
     await wait(`!!document.querySelector('.cm-table-cell[data-row="2"][data-col="0"]')`);
     assert.equal(await js(`document.activeElement.dataset.row`), '2');
@@ -93,6 +98,7 @@ Writing after the table.
     assert.ok(!fs.readFileSync(main, 'utf8').includes('Delta'));
     await key('z', ['meta', 'shift']); await save();
     assert.ok(fs.readFileSync(main, 'utf8').includes('Delta'));
+    await key('Right', ['meta']); // Place the composition explicitly after the restored text.
     await js(`document.activeElement.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:''}))`);
     await type(' 中文');
     await js(`document.activeElement.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:' 中文'}))`);
@@ -160,6 +166,9 @@ Writing after the table.
     for (const id of ['circuit', 'logic', 'structure', 'skeletal', 'tikz-writing', 'chart-writing']) assert.ok(saved.includes(`After ${id}. `));
     await wait(`!!document.querySelector('.cm-tikz-body img')`, 45000);
     await wait(`!!document.querySelector('.cm-tikz-body [data-artwork="monochrome"]')`);
+    const diagramSize = await js(`(()=>{const img=document.querySelector('.cm-tikz-body [data-artwork="monochrome"] img');return {width:img.getBoundingClientRect().width,pixels:img.naturalWidth}})()`);
+    assert.ok(diagramSize.width > 30 && diagramSize.width < 450, 'A small authored diagram must not fill the writing column');
+    assert.ok(diagramSize.pixels >= diagramSize.width * 1.8, 'Diagram strokes must render at display density');
     const diagramPos = await js(`document.querySelector('.cm-tikz-body [data-artwork="monochrome"]').closest('[data-texpro-pos]').dataset.texproPos`);
     for (const theme of ['paper', 'studio', 'night']) {
       await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)};document.querySelector('.cm-tikz-body[data-texpro-pos="${diagramPos}"]').scrollIntoView({block:'center'})`);
@@ -170,6 +179,7 @@ Writing after the table.
     await bodyEnd();
     await type('\n\\begin{tikzpicture}\n\\draw[red,line width=2pt] (0,0) -- (2,0) node[right] {Red annotation};\n\\end{tikzpicture}\n\n');
     await wait(`(()=>{const last=[...document.querySelectorAll('.cm-tikz-widget')].at(-1);return !!last?.querySelector('[data-artwork="document-color"] img')?.naturalWidth})()`);
+    assert.ok(await js(`(()=>{const img=[...document.querySelectorAll('.cm-tikz-widget')].at(-1).querySelector('img');return img.naturalWidth>=img.getBoundingClientRect().width*1.8})()`), 'Authored color artwork must stay sharp too');
     for (const theme of ['paper', 'studio', 'night']) {
       await js(`document.documentElement.dataset.theme=${JSON.stringify(theme)};[...document.querySelectorAll('.cm-tikz-body [data-artwork="document-color"]')].at(-1).scrollIntoView({block:'center'})`);
       assert.ok(await js(`(()=>{const e=[...document.querySelectorAll('.cm-tikz-body [data-artwork="document-color"]')].at(-1);return getComputedStyle(e).backgroundColor==='rgb(255, 255, 255)'&&getComputedStyle(e.querySelector('img')).opacity==='1'})()`));

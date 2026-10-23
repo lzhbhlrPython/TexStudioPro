@@ -315,7 +315,7 @@ async function runLatexOnce(engine, args, cwd, timeoutMs) {
   });
 }
 
-async function renderTikz({ projectRoot, filePath, source, preamble: documentBuffer }) {
+async function renderTikz({ projectRoot, filePath, source, preamble: documentBuffer, preferPdf = false }) {
   const root = path.resolve(projectRoot || '');
   if (!fs.existsSync(root)) return { ok: false, error: 'Project is not open' };
   const cleanSource = String(source || '').trim();
@@ -372,7 +372,10 @@ async function renderTikz({ projectRoot, filePath, source, preamble: documentBuf
   const texPath = path.join(dir, base + '.tex');
   const pdfPath = path.join(dir, base + '.pdf');
   const pngPath = path.join(dir, base + '.png');
-  const svgPath = path.join(dir, base + '.svg');
+  const readyPath = pdfPath + '.ready';
+  if (preferPdf && fs.existsSync(pdfPath) && (fs.existsSync(readyPath) || fs.existsSync(pngPath))) {
+    return { ok: true, pdfPath, engine, cacheKey, cached: true, format: 'pdf' };
+  }
   if (fs.existsSync(pngPath)) {
     return { ok: true, svgPath: pngPath, engine, cacheKey, cached: true, format: 'png' };
   }
@@ -412,6 +415,7 @@ async function renderTikz({ projectRoot, filePath, source, preamble: documentBuf
       30000,
     );
     if (fallbackCompile.code === 0 && fs.existsSync(fallbackPdf)) {
+      if (preferPdf) return { ok: true, pdfPath: fallbackPdf, engine, cacheKey, cached: false, format: 'pdf', fallback: true, warning: firstError || 'Rendered with a minimal preamble because the project preamble failed.' };
       const fallbackRaster = await runLatexOnce(
         'sips',
         ['-s', 'format', 'png', '--resampleWidth', '1800', fallbackPdf, '--out', fallbackPng],
@@ -439,6 +443,8 @@ async function renderTikz({ projectRoot, filePath, source, preamble: documentBuf
       engine,
     };
   }
+  fs.writeFileSync(readyPath, '', 'utf8');
+  if (preferPdf) return { ok: true, pdfPath, engine, cacheKey, cached: false, format: 'pdf' };
   const raster = await runLatexOnce(
     'sips',
     ['-s', 'format', 'png', '--resampleWidth', '1800', pdfPath, '--out', pngPath],

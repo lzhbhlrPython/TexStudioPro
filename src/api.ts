@@ -73,9 +73,11 @@ export interface TexProApi {
     filePath: string;
     source: string;
     preamble?: string;
+    preferPdf?: boolean;
   }) => Promise<{
     ok: boolean;
     svgPath?: string;
+    pdfPath?: string;
     engine?: string;
     cacheKey?: string;
     cached?: boolean;
