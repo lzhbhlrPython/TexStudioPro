@@ -7,7 +7,7 @@ import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, typ
 import { StateEffect, StateField, type EditorState, type Extension, type Range } from '@codemirror/state';
 import katex from 'katex';
 import { assetUrl, dirname, joinPath, parseDocumentTitle } from '../lib/latex';
-import { t } from '../i18n';
+import { getLanguage, t } from '../i18n';
 import { themeTexArtwork } from '../lib/texArtwork';
 import { rasterizeTexPdf } from '../lib/texPdfArtwork';
 import { reviewedRanges } from './writingReview';
@@ -68,6 +68,7 @@ function activate(view: EditorView, pos: number) {
 }
 
 abstract class LatexWidget extends WidgetType {
+  readonly locale = getLanguage();
   constructor(readonly focusPos: number) {
     super();
   }
@@ -90,7 +91,7 @@ class InlineMathWidget extends LatexWidget {
   }
 
   eq(other: InlineMathWidget) {
-    return other.tex === this.tex;
+    return other.locale === this.locale && other.tex === this.tex;
   }
 
   toDOM(view: EditorView) {
@@ -116,7 +117,7 @@ class DisplayMathWidget extends LatexWidget {
   }
 
   eq(other: DisplayMathWidget) {
-    return other.tex === this.tex && other.label === this.label;
+    return other.locale === this.locale && other.tex === this.tex && other.label === this.label;
   }
 
   toDOM(view: EditorView) {
@@ -151,14 +152,14 @@ class SectionBadgeWidget extends LatexWidget {
   }
 
   eq(other: SectionBadgeWidget) {
-    return other.level === this.level && other.command === this.command;
+    return other.locale === this.locale && other.level === this.level && other.command === this.command;
   }
 
   toDOM(view: EditorView) {
     const span = document.createElement('span');
     span.className = `cm-section-badge cm-section-badge-${this.level}`;
-    const labels: Record<string, string> = { part: '部分', chapter: '章', section: '节', subsection: '小节', subsubsection: '小小节', paragraph: '段' };
-    span.textContent = labels[this.command] || '节';
+    const labels: Record<string, string> = { part: 'Part', chapter: 'Chapter', section: 'Section', subsection: 'Subsection', subsubsection: 'Subsubsection', paragraph: 'Paragraph' };
+    span.textContent = t(labels[this.command] || 'Section');
     this.bind(span, view);
     return span;
   }
@@ -169,8 +170,8 @@ class BulletWidget extends LatexWidget {
     super(focusPos);
   }
 
-  eq() {
-    return true;
+  eq(other: BulletWidget) {
+    return other.locale === this.locale;
   }
 
   toDOM(view: EditorView) {
@@ -193,7 +194,7 @@ class ImageWidget extends LatexWidget {
   }
 
   eq(other: ImageWidget) {
-    return other.src === this.src && other.block === this.block;
+    return other.locale === this.locale && other.src === this.src && other.block === this.block;
   }
 
   toDOM(view: EditorView) {
@@ -237,7 +238,7 @@ class TableWidget extends LatexWidget {
   }
 
   eq(other: TableWidget) {
-    return other.html === this.html && other.source === this.source;
+    return other.locale === this.locale && other.html === this.html && other.source === this.source;
   }
 
   toDOM(view: EditorView) {
@@ -271,7 +272,7 @@ class CodeBlockWidget extends LatexWidget {
   }
 
   eq(other: CodeBlockWidget) {
-    return other.code === this.code && other.language === this.language;
+    return other.locale === this.locale && other.code === this.code && other.language === this.language;
   }
 
   toDOM(view: EditorView) {
@@ -281,7 +282,7 @@ class CodeBlockWidget extends LatexWidget {
     head.className = 'cm-code-head';
     const dot = document.createElement('i');
     const label = document.createElement('span');
-    label.textContent = this.language || 'code';
+    label.textContent = this.language === 'code' || !this.language ? t('Code') : this.language;
     head.append(dot, label);
     const pre = document.createElement('pre');
     pre.textContent = this.code;
@@ -306,7 +307,7 @@ class PreambleWidget extends LatexWidget {
   }
 
   eq(other: PreambleWidget) {
-    return other.documentClass === this.documentClass && other.packages === this.packages && other.lines === this.lines;
+    return other.locale === this.locale && other.documentClass === this.documentClass && other.packages === this.packages && other.lines === this.lines;
   }
 
   toDOM(view: EditorView) {
@@ -346,7 +347,7 @@ class TitleWidget extends LatexWidget {
   }
 
   eq(other: TitleWidget) {
-    return other.title === this.title && other.author === this.author && other.date === this.date;
+    return other.locale === this.locale && other.title === this.title && other.author === this.author && other.date === this.date;
   }
 
   toDOM(view: EditorView) {
@@ -381,7 +382,7 @@ class ReferenceWidget extends LatexWidget {
   }
 
   eq(other: ReferenceWidget) {
-    return other.kind === this.kind && other.target === this.target;
+    return other.locale === this.locale && other.kind === this.kind && other.target === this.target;
   }
 
   toDOM(view: EditorView) {
@@ -403,8 +404,8 @@ class TexLogoWidget extends LatexWidget {
     super(focusPos);
   }
 
-  eq() {
-    return true;
+  eq(other: TexLogoWidget) {
+    return other.locale === this.locale;
   }
 
   toDOM(view: EditorView) {
@@ -458,7 +459,7 @@ class TikzWidget extends LatexWidget {
   }
 
   eq(other: TikzWidget) {
-    return other.source === this.source && other.filePath === this.filePath && other.preamble === this.preamble && other.inline === this.inline && other.previewOnly === this.previewOnly && other.focusPos === this.focusPos;
+    return other.locale === this.locale && other.source === this.source && other.filePath === this.filePath && other.preamble === this.preamble && other.inline === this.inline && other.previewOnly === this.previewOnly && other.focusPos === this.focusPos;
   }
 
   toDOM(view: EditorView) {
@@ -502,7 +503,7 @@ class TikzWidget extends LatexWidget {
       message.className = 'cm-tikz-error';
       message.textContent = result.error || t('TikZ rendering failed');
       body.replaceChildren(message);
-      status.textContent = 'error'; status.classList.add('failed');
+      status.textContent = t('Render error'); status.classList.add('failed');
       if (result.log) {
         const details = document.createElement('details'); details.className = 'cm-tikz-log';
         const summary = document.createElement('summary'); summary.textContent = t('Show log');
@@ -530,7 +531,7 @@ class TikzWidget extends LatexWidget {
         img.loading = 'lazy';
         img.addEventListener('error', () => showFailure({ ok: false, error: t('Could not load the rendered diagram.') }));
         frame.appendChild(img); body.replaceChildren(frame);
-        status.textContent = result.cached ? 'cached' : result.engine || 'ready';
+        status.textContent = result.cached ? t('Cached') : result.engine || t('Rendered');
         status.classList.add('ready');
       } else {
         showFailure(result);
@@ -558,7 +559,8 @@ class ClearWidget extends WidgetType {
 }
 
 class MusicDataWidget extends WidgetType {
-  eq() { return true; }
+  readonly locale = getLanguage();
+  eq(other: MusicDataWidget) { return other.locale === this.locale; }
   toDOM() {
     const dom = document.createElement('div'); dom.className = 'cm-music-data'; dom.textContent = t('Music data · preserved');
     return dom;
@@ -587,7 +589,7 @@ class EnvironmentWidget extends LatexWidget {
   }
 
   eq(other: EnvironmentWidget) {
-    return other.name === this.name && other.closing === this.closing;
+    return other.locale === this.locale && other.name === this.name && other.closing === this.closing;
   }
 
   toDOM(view: EditorView) {
@@ -617,7 +619,7 @@ class LabelWidget extends LatexWidget {
   }
 
   eq(other: LabelWidget) {
-    return other.label === this.label;
+    return other.locale === this.locale && other.label === this.label;
   }
 
   toDOM(view: EditorView) {
@@ -634,14 +636,14 @@ class CaptionBadgeWidget extends LatexWidget {
     super(focusPos);
   }
 
-  eq() {
-    return true;
+  eq(other: CaptionBadgeWidget) {
+    return other.locale === this.locale;
   }
 
   toDOM(view: EditorView) {
     const element = document.createElement('span');
     element.className = 'cm-caption-badge';
-    element.textContent = 'CAPTION';
+    element.textContent = t('Caption');
     this.bind(element, view);
     return element;
   }

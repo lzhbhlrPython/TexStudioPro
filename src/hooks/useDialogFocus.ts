@@ -1,7 +1,8 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 /** Contain keyboard focus while an overlay is open, and return it to its trigger. */
 export function useDialogFocus(open: boolean, ref: RefObject<HTMLElement | null>, onClose: () => void) {
+  const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -15,7 +16,7 @@ export function useDialogFocus(open: boolean, ref: RefObject<HTMLElement | null>
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        onClose();
+        closeRef.current();
       } else if (event.key === 'Tab') {
         const items = focusable();
         const index = items.indexOf(document.activeElement as HTMLElement);

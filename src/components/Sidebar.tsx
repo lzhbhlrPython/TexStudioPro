@@ -342,7 +342,7 @@ export function Sidebar({
 
   return (
     <aside className="sidebar" data-tree-menu={treeMenu ? treeMenu.node.name : ""}>
-      <nav className="sidebar-rail" aria-label="Sidebar sections">
+      <nav className="sidebar-rail" aria-label={t('Sidebar sections')}>
         <button className={tab === 'files' ? 'active' : ''} data-testid="tab-files"
           onClick={() => onTabChange('files')} title={t('Project files')} aria-label={t('Project files')}>
           <Files size={17} />
@@ -415,10 +415,10 @@ export function Sidebar({
                     />
                   ))
                 ) : (
-                  <div className="panel-empty">This folder is empty.</div>
+                  <div className="panel-empty">{t('This folder is empty.')}</div>
                 )
               ) : (
-                <div className="panel-empty">No project open.</div>
+                <div className="panel-empty">{t('No project open.')}</div>
               )}
             </div>
           </>
@@ -648,7 +648,7 @@ export function Sidebar({
               <button
                 className={`mini-btn ${caseSensitive ? 'active' : ''}`}
                 onClick={() => setCaseSensitive((value) => !value)}
-                title="Match case"
+                title={t('Match case')}
               >
                 Aa
               </button>

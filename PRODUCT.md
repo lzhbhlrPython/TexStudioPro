@@ -43,6 +43,8 @@ Confirmed capabilities include:
 
 - Visual editing of LaTeX source with KaTeX math, headings, tables, images, code blocks, labels/references, and TikZ previews.
 - Project tree, outline, symbol index, search, autosave, compile strategies, cancellation, and diagnostics.
+- Optional Markdown typing shortcuts and HTML/Markdown/TSV paste conversion, with literal TeX preservation and undo; contextual reference/footnote peek and validated project label rename.
+- Local per-project restoration of the last file, caret, selection, and scroll after reopening or restarting, without changing the selected main file. Undo history remains session-only; files retain separate editing surfaces rather than a merged continuous document.
 - PDF search, thumbnails, text layer, spread/presentation modes, SyncTeX, and before/after pixel diff.
 - Bibliography management, DOI/arXiv lookup, Zotero Better BibTeX import/search, and citation/label graph.
 - Template gallery and template workshop; Markdown/Typst import; Markdown/Typst/HTML export.
@@ -86,7 +88,7 @@ Explicitly undecided or constrained facts:
 
 There are no confirmed customer testimonials, case studies, commercial benchmarks, or production deployment claims. Future work must not invent them.
 
-Release builds validate renderer assets before packing and inspect the resulting ASAR afterward. CI packaging alone is not desktop runtime acceptance.
+Release builds validate renderer assets before packing and inspect the resulting ASAR afterward. CI packaging alone is not desktop runtime acceptance. Current writing interaction boundaries and remaining issues are recorded in [the interaction audit](docs/interaction-audit.md).
 
 ## Product Principles
 

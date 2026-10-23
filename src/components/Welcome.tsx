@@ -1,3 +1,4 @@
+import { formatShortcut } from '../i18n';
 import { ArrowRight, BookOpen, Command, FileText, FolderOpen, LayoutTemplate, Search, Settings2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { RecentProject } from '../types';
@@ -50,7 +51,7 @@ export function Welcome({ recent, onOpenFolder, onDemo, onOpenRecent, onTemplate
           </section>
           <aside className="welcome-start" aria-labelledby="welcome-start-title">
             <h2 id="welcome-start-title">{t('Begin a project')}</h2>
-            <button className="welcome-open" onClick={onOpenFolder}><FolderOpen size={18} /><span>{t('Open folder')}<small>{t('Continue an existing LaTeX project')}</small></span><kbd>⌘O</kbd></button>
+            <button className="welcome-open" onClick={onOpenFolder}><FolderOpen size={18} /><span>{t('Open folder')}<small>{t('Continue an existing LaTeX project')}</small></span><kbd>{formatShortcut('⌘O')}</kbd></button>
             <button className="welcome-template" onClick={onTemplates}><LayoutTemplate size={18} /><span>{t('New from template')}<small>{t('Articles, reports and presentations')}</small></span><ArrowRight size={15} /></button>
             <button className="welcome-text-button welcome-demo" onClick={onDemo}><FileText size={14} />{t('Explore the demo project')}<ArrowRight size={13} /></button>
             <div className="welcome-guide">
@@ -65,7 +66,7 @@ export function Welcome({ recent, onOpenFolder, onDemo, onOpenRecent, onTemplate
         </div>
         <footer className="welcome-footer">
           <span>{t('Visual LaTeX Workbench')}</span>
-          <div><button onClick={onPalette}><Command size={13} />{t('Command palette')}<kbd>⌘K</kbd></button><button onClick={onOpenSettings}><Settings2 size={13} />{t('Settings')}<kbd>⌘,</kbd></button></div>
+          <div><button onClick={onPalette}><Command size={13} />{t('Command palette')}<kbd>{formatShortcut('⌘K')}</kbd></button><button onClick={onOpenSettings}><Settings2 size={13} />{t('Settings')}<kbd>{formatShortcut('⌘,')}</kbd></button></div>
         </footer>
       </div>
     </main>

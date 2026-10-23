@@ -36,6 +36,123 @@ export function getLanguage(): Language {
 }
 
 const zh: Record<string, string> = {
+  "The folder is moved to .texpro/trash.": "文件夹将移入 .texpro/trash，可从中恢复。",
+  "{errors} errors · {warnings} warnings": "{errors} 个错误 · {warnings} 条警告",
+  "Rename": "重命名",
+  "Project changed. Try again.": "项目已切换，请重试。",
+  "Document changed. Try again.": "文档已修改，请重试。",
+  "Label and references updated": "已更新标签及引用",
+  "{count} occurrences in {files} files": "已更新 {files} 个文件中的 {count} 处",
+  "Rename label and references": "重命名标签及引用",
+  "A file with this name already exists.": "同名文件已存在，请使用其他名称。",
+  "Convert web content, Markdown and spreadsheet tables to TeX. Paste as plain text with the alternate paste shortcut.": "将网页、Markdown 和电子表格转换为 TeX；使用无格式粘贴快捷键可保留原文。",
+  "Continue": "继续",
+  "New label": "新标签",
+  "Inline math": "行内公式",
+  "Citation": "文献引用",
+  "Reference": "交叉引用",
+  "Could not read reference source": "无法读取引用目标的源码",
+  "Footnote": "脚注",
+  "Updating…": "正在更新…",
+  "Use a label without spaces or TeX special characters.": "标签不能包含空格或 TeX 特殊字符。",
+  "Enter a different label.": "请输入不同的标签。",
+  "The original label must have exactly one declaration in this project.": "项目中必须存在且仅存在一处原标签定义。",
+  "This label already exists in the project.": "项目中已存在此标签。",
+  "Jump from the cursor to the typeset page": "从光标位置定位到 PDF 页面",
+  "Start a project from a built-in or user template": "使用内置或个人模板创建项目",
+  "Preview, import and insert project images": "预览、导入和插入项目图片",
+  "Edit CSV data, preview native pgfplots and insert LaTeX": "编辑 CSV 数据，预览 pgfplots 图表并插入 LaTeX",
+  "Live TikZ preview with the current document preamble": "使用当前文档的导言区实时预览 TikZ",
+  "Modules, directories and table of contents": "管理模块、文件夹和目录",
+  "Edit .bib entries and insert citations": "编辑 .bib 条目并插入引用",
+  "Convert a document into portable LaTeX": "将文档转换为可移植的 LaTeX",
+  "Design and save a document template": "设计并保存文档模板",
+  "Compose KaTeX math and insert LaTeX": "编辑公式并插入 LaTeX",
+  "Margins, columns, spacing, language and headers": "设置页边距、分栏、间距、语言和页眉",
+  "Switch between the Paper and Night themes": "在纸面与夜间主题之间切换",
+  "Switch the interface to Chinese": "将界面切换为中文",
+  "Switch the interface to English": "将界面切换为英语",
+  "Sidebar sections": "侧栏栏目",
+  "Dismiss": "关闭通知",
+  "Portable text": "可移植文本",
+  "Portable .tex": "可移植 .tex 文档",
+  "Cached": "已缓存",
+  "Rendered": "已渲染",
+  "Render error": "渲染失败",
+  "Section": "节",
+  "Subsection": "小节",
+  "Subsubsection": "小小节",
+  "Paragraph": "段",
+  "Part": "部",
+  "Chapter": "章",
+  "Create a file with \\documentclass to begin.": "新建包含 \\documentclass 的文件即可开始。",
+  "{count} references updated": "已更新 {count} 处引用",
+  "page reference": "页码引用",
+  "smart reference": "智能引用",
+  "citation": "文献引用",
+  "parenthetical citation": "括号文献引用",
+  "textual citation": "叙述式文献引用",
+  "footnote": "脚注",
+  "emphasis": "强调",
+  "bold": "加粗",
+  "italic": "斜体",
+  "monospace": "等宽文字",
+  "underline": "下划线",
+  "small caps": "小型大写字母",
+  "hyperlink": "超链接",
+  "image": "图片",
+  "caption": "题注",
+  "center content": "内容居中",
+  "list item": "列表项",
+  "page break": "分页",
+  "flush floats and break page": "输出浮动体并分页",
+  "horizontal space": "水平间距",
+  "vertical space": "垂直间距",
+  "no first-line indent": "首行不缩进",
+  "include file": "引入文件",
+  "include file (page break)": "引入文件并分页",
+  "bibliography": "参考文献",
+  "bibliography style": "参考文献样式",
+  "fraction": "分数",
+  "square root": "平方根",
+  "sum": "求和",
+  "integral": "积分",
+  "product": "连乘",
+  "limit": "极限",
+  "auto-sized delimiter": "自动大小定界符",
+  "close auto-sized delimiter": "关闭自动大小定界符",
+  "blackboard bold": "黑板粗体",
+  "calligraphic": "花体",
+  "upright math": "正体数学符号",
+  "bold math": "粗体数学符号",
+  "math operator": "数学运算符",
+  "text inside math": "公式中的文字",
+  "wide space": "宽空格",
+  "extra-wide space": "加宽空格",
+  "table rule": "表格横线",
+  "booktabs top rule": "三线表顶线",
+  "booktabs middle rule": "三线表中线",
+  "booktabs bottom rule": "三线表底线",
+  "span columns": "合并列",
+  "span rows": "合并行",
+  "todo note": "待办批注",
+  "define command": "定义命令",
+  "redefine command": "重新定义命令",
+  "define environment": "定义环境",
+  "Greek letter": "希腊字母",
+  "environment": "环境",
+  "Build {name}": "编译 {name}",
+  "Save project files": "保存项目文件",
+  "Opening {name}…": "正在打开 {name}…",
+  "Select a file to start editing.": "选择一个文件开始写作。",
+  "Imported into document": "已导入文档",
+  "Imported document created": "已创建导入文档",
+  "Details": "详情",
+  "Loading…": "正在加载…",
+  "LaTeX source editor": "LaTeX 源码编辑器",
+  "Start writing, or open a .tex file from the project…": "开始写作，或从项目中打开 .tex 文件…",
+  "Markdown input shortcuts": "Markdown 输入快捷语法",
+  "Convert headings, lists and inline formatting while typing. Undo restores the original syntax.": "输入时转换标题、列表和行内格式，撤销可恢复原始语法。",
   'A file or folder with this name already exists.': '同名文件或文件夹已存在，请换一个名称。',
   'Use a file name without path separators or reserved characters.': '请使用不含路径分隔符或保留字符的名称。',
   'Go to source': '查看引用原文',
@@ -213,6 +330,7 @@ const zh: Record<string, string> = {
   'Open folder': '打开文件夹',
   'Open project (⌘O)': '打开项目（⌘O）',
   'Switch project': '切换项目',
+  'Edit': '编辑',
   'Editing mode': '编辑模式',
   'Visual': '视觉',
   'Source': '源码',
@@ -1631,8 +1749,8 @@ const zh: Record<string, string> = {
   'Committed by approved crew action': '已由批准的剧组动作提交',
   'Figure block inserted after approval': '批准后已插入图块',
 
-  'Interface language: English': '界面语言：English',
-  '界面语言：中文': 'Interface language: 中文',
+  'Interface language: English': '界面语言：英语',
+  'Interface language: Chinese': '界面语言：中文',
   'Paper API & referee': '论文 API 与审稿',
 
   'Flowchart': '流程图',
@@ -1681,6 +1799,11 @@ const en: Record<string, string> = {
   'welcome.synctex': 'SyncTeX',
 };
 
+export function formatShortcut(value: string): string {
+  if (typeof navigator === 'undefined' || /Mac|iPhone|iPad/.test(navigator.platform)) return value;
+  return value.replace(/⌘\s*/g, 'Ctrl+').replace(/⇧\s*/g, 'Shift+').replace(/⌥\s*/g, 'Alt+').replace(/↩/g, 'Enter');
+}
+
 function interpolate(text: string, vars?: Record<string, string | number>) {
   if (!vars) return text;
   return text.replace(/\{(\w+)\}/g, (match, key) => {
@@ -1691,7 +1814,7 @@ function interpolate(text: string, vars?: Record<string, string | number>) {
 
 export function t(key: string, vars?: Record<string, string | number>): string {
   const table = currentLanguage === 'zh' ? zh : en;
-  return interpolate(table[key] ?? key, vars);
+  return formatShortcut(interpolate(table[key] ?? key, vars));
 }
 
 function subscribe(listener: () => void) {
@@ -1706,7 +1829,7 @@ export function useI18n() {
     setLanguage,
     t: (key: string, vars?: Record<string, string | number>) => {
       const table = language === 'zh' ? zh : en;
-      return interpolate(table[key] ?? key, vars);
+      return formatShortcut(interpolate(table[key] ?? key, vars));
     },
   };
 }

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import type { EditorView } from '@codemirror/view';
 import type { ProjectSymbols } from '../types';
@@ -47,7 +48,7 @@ const commands: Array<{ label: string; detail: string; template?: string; boost?
   { label: '\\en', detail: 'MusiXTeX end note group' },
   { label: '\\documentclass', detail: 'class', template: '\\documentclass{article}|' },
   { label: '\\usepackage', detail: 'package', template: '\\usepackage{amsmath}|' },
-  { label: '\\begin', detail: 'environment', template: '\\begin{equation}|\n\n\\end{equation}' },
+  { label: '\\begin', detail: t('environment'), template: '\\begin{equation}|\n\n\\end{equation}' },
   { label: '\\end', detail: 'close environment', template: '\\end{}|' },
   { label: '\\section', detail: 'heading 1', template: '\\section{|}' },
   { label: '\\section*', detail: 'unnumbered heading', template: '\\section*{|}' },
@@ -162,7 +163,7 @@ function insertTemplate(view: EditorView, from: number, to: number, template: st
 function commandCompletion(item: { label: string; detail: string; template?: string; boost?: number }): Completion {
   return {
     label: item.label,
-    detail: item.detail,
+    detail: t(item.detail),
     boost: item.boost,
     type: item.template ? 'snippet' : 'keyword',
     apply: (view, _completion, from, to) => {
@@ -192,7 +193,7 @@ function environmentCompletion(name: string): Completion {
   return {
     label: name,
     type: 'class',
-    detail: 'environment',
+    detail: t('environment'),
     apply: (view, _completion, from, to) => {
       const close = `\\end{${name}}`;
       const insert = `${name}}\n  |\n${close}`;

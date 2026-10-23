@@ -26,7 +26,8 @@
     "test:music:ui": "node scripts/test-ui.cjs --music",
     "test:writing:ui": "node scripts/test-ui.cjs --writing",
     "test:assets:ui": "node scripts/test-ui.cjs --assets",
-    "test:continuity:ui": "node scripts/test-ui.cjs --continuity"
+    "test:continuity:ui": "node scripts/test-ui.cjs --continuity",
+    "test:flow:ui": "node scripts/test-flow-ui.cjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.0",

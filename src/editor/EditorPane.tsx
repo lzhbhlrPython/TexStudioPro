@@ -1,6 +1,12 @@
+import { stableViewport } from './stableViewport';
+import { labelAt, textChange } from '../lib/labelRename';
+import { t, useI18n } from '../i18n';
+import { smartInput } from './smartInput';
+import { prosePosition, TEX_CLIPBOARD } from '../lib/writingFormats';
+import { rememberWritingPosition, resumePosition } from '../lib/writingResume';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Compartment, EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, StateEffect, StateField, Transaction, type ChangeSet, type Extension } from '@codemirror/state';
 import {
   EditorView,
   drawSelection,
@@ -57,6 +63,8 @@ import { findSpellingIssues } from '../lib/spellcheck';
 import { smartPaste } from '../lib/pasteCleaner';
 
 export interface EditorHandle {
+  renameLabel: () => void;
+  applyProjectChanges: (changes: ChangeSet) => void;
   leaveNote: () => void;
   toggleNote: (note: WritingNote) => boolean;
   moveContent: (direction: -1 | 1) => boolean;
@@ -101,6 +109,9 @@ interface Props {
   settings: Settings;
   symbols: ProjectSymbols;
   diagnostics: Diagnostic[];
+  readSource: (file: string) => Promise<string>;
+  onRenameLabel: (before: string, after: string) => Promise<number>;
+  onProjectHistory: (redo: boolean) => boolean;
   onChange: (value: string) => void;
   onCursor: (cursor: CursorInfo) => void;
   onSave: () => void;
@@ -203,6 +214,14 @@ const flashField = StateField.define<DecorationSet>({
 });
 
 export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(props, ref) {
+  const { language } = useI18n();
+  const [renaming, setRenaming] = useState<{ before: string; value: string; error: string; busy: boolean } | null>(null);
+  const startRename = (key?: string) => {
+    const view = viewRef.current; if (!view || view.composing) return;
+    const before = key || labelAt(view.state.doc.toString(), view.state.selection.main.head);
+    if (before) setRenaming({ before, value: before, error: '', busy: false });
+  };
+  const plainPasteUntil = useRef(0);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const propsRef = useRef(props);
@@ -276,6 +295,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
         history(),
         writingTargets,
         stableWritingInput,
+        stableViewport,
         writingReview,
         writingFeedback,
         drawSelection(),
@@ -297,9 +317,13 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
         foldGutter({ openText: '⌄', closedText: '›' }),
         highlightSelectionMatches(),
         keymap.of([
+          { key: 'F2', run: () => { startRename(); return true; } },
+          { key: 'Mod-z', run: () => propsRef.current.onProjectHistory(false) },
+          { key: 'Mod-Shift-z', run: () => propsRef.current.onProjectHistory(true) },
+          { key: 'Mod-y', run: () => propsRef.current.onProjectHistory(true) },
           ...completionKeymap,
           { key: 'Tab', run: view => !view.composing && acceptCompletion(view) },
-          { key: 'Escape', run: leaveWritingBlock },
+          { key: 'Escape', run: view => view.dom.querySelector('.cm-tooltip') ? false : leaveWritingBlock(view) },
           { key: 'Alt-Enter', run: leaveWritingBlock },
           { key: 'Alt-Shift-ArrowUp', run: view => moveContent(view, -1) },
           { key: 'Alt-Shift-ArrowDown', run: view => moveContent(view, 1) },
@@ -373,9 +397,9 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
           spellcheck: 'false',
           autocorrect: 'off',
           autocapitalize: 'off',
-          'aria-label': 'LaTeX source editor',
+          'aria-label': t('LaTeX source editor'),
         }),
-        placeholder('Start writing, or open a .tex file from the project…'),
+        placeholder(t('Start writing, or open a .tex file from the project…')),
         lintGutter(),
         linter((view) => findSpellingIssues(view.state.doc.toString(), spellWordsRef.current).map((issue) => ({
           from: issue.from,
@@ -386,7 +410,8 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
         })), { delay: 900 }),
 
         flashField,
-        writingReferenceHover(() => symbolsRef.current.symbols, () => symbolsRef.current.filePath),
+        smartInput(() => propsRef.current.settings.smartInput),
+        writingReferenceHover(() => symbolsRef.current.symbols, () => symbolsRef.current.filePath, file => file === propsRef.current.path ? Promise.resolve(viewRef.current?.state.doc.toString() || propsRef.current.value) : propsRef.current.readSource(file)),
         compartments.collab.of(props.collabExtension || []),
         compartments.visual.of(
           props.settings.visual
@@ -396,7 +421,25 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
         compartments.focus.of(props.settings.focus ? focusMode() : []),
         compartments.typewriter.of(props.settings.typewriter ? typewriterMode() : []),
         EditorView.domEventHandlers({
+          copy(event, view) {
+            if (!event.clipboardData || (event.target instanceof Element && event.target.closest('.cm-table-cell'))) return false;
+            const selected = view.state.selection.ranges.filter(range => !range.empty).map(range => view.state.sliceDoc(range.from, range.to)).join('\n');
+            if (!selected) return false;
+            event.clipboardData.setData(TEX_CLIPBOARD, selected);
+            event.clipboardData.setData('text/plain', selected);
+            event.preventDefault(); return true;
+          },
+          cut(event, view) {
+            if (!event.clipboardData || !view.state.selection.ranges.some(range => !range.empty) || (event.target instanceof Element && event.target.closest('.cm-table-cell'))) return false;
+            const selected = view.state.selection.ranges.map(range => view.state.sliceDoc(range.from, range.to)).join('\n');
+            event.clipboardData.setData(TEX_CLIPBOARD, selected); event.clipboardData.setData('text/plain', selected);
+            event.preventDefault(); view.dispatch(view.state.replaceSelection(''), { annotations: isolateHistory.of('full'), userEvent: 'delete.cut' }); return true;
+          },
+          keydown(event) { if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'v') plainPasteUntil.current = Date.now() + 1500; return false; },
           paste(event, view) {
+            if (Date.now() < plainPasteUntil.current) { plainPasteUntil.current = 0; return false; }
+            const own = event.clipboardData?.getData(TEX_CLIPBOARD);
+            if (own) { event.preventDefault(); view.dispatch(view.state.replaceSelection(own), { annotations: isolateHistory.of('full'), userEvent: 'input.paste' }); return true; }
             const items = event.clipboardData?.items;
             if (items && propsRef.current.onPasteImage) {
               for (const item of Array.from(items)) {
@@ -408,7 +451,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
                 return true;
               }
             }
-            if (!propsRef.current.settings.smartPaste || !event.clipboardData) return false;
+            if (!propsRef.current.settings.smartPaste || !event.clipboardData || !prosePosition(view.state.doc.toString(), view.state.selection.main.from)) return false;
             const raw = event.clipboardData.getData('text/plain');
             const html = event.clipboardData.getData('text/html');
             if (!raw && !html) return false;
@@ -420,6 +463,8 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
               view.dispatch({
                 changes: { from: selection.from, to: selection.to, insert: cleaned },
                 selection: { anchor: selection.from + cleaned.length },
+                annotations: isolateHistory.of('full'),
+                userEvent: 'input.paste',
                 scrollIntoView: true,
               });
               return true;
@@ -477,7 +522,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     const cached = props.sessions.get(props.path);
     return cached && cached.state.doc.toString() === props.value
       ? cached.state.update({ effects: [StateEffect.reconfigure.of(extensions), composingWriting.of(false)] }).state
-      : EditorState.create({ doc: props.value, extensions });
+      : EditorState.create({ doc: props.value, extensions, selection: resumePosition(props.root, props.path, props.value) || undefined });
   });
 
   useEffect(() => {
@@ -485,6 +530,8 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
     const cached = props.sessions.get(props.path);
+    const resumed = !cached && resumePosition(props.root, props.path, props.value);
+    if (resumed) { restoreWritingPosition(view, resumed); if (!resumed.top) view.dispatch({ effects: EditorView.scrollIntoView(resumed.head, { y: 'center' }) }); }
     if (cached) view.requestMeasure({ read: () => null, write: () => { view.scrollDOM.scrollTop = cached.top; view.scrollDOM.scrollLeft = cached.left; } });
     const selection = state.selection.main;
     const line = state.doc.lineAt(selection.head);
@@ -493,7 +540,16 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
       column: selection.head - line.from + 1,
       selected: 0,
     });
+    const persist = () => rememberWritingPosition(props.root, writingPosition(view, props.path), view.state.doc.toString());
+    let persistTimer = 0;
+    const schedulePersist = () => { window.clearTimeout(persistTimer); persistTimer = window.setTimeout(persist, 250); };
+    view.scrollDOM.addEventListener('scroll', schedulePersist);
+    view.contentDOM.addEventListener('keyup', schedulePersist);
+    view.contentDOM.addEventListener('pointerup', schedulePersist);
+    window.addEventListener('beforeunload', persist);
     return () => {
+      window.clearTimeout(persistTimer); persist();
+      view.scrollDOM.removeEventListener('scroll', schedulePersist); view.contentDOM.removeEventListener('keyup', schedulePersist); view.contentDOM.removeEventListener('pointerup', schedulePersist); window.removeEventListener('beforeunload', persist);
       props.sessions.set(props.path, { state: view.state, top: view.scrollDOM.scrollTop, left: view.scrollDOM.scrollLeft });
       cancelAnimationFrame(cursorFrame.current);
       view.destroy();
@@ -501,7 +557,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     };
   }, [state]);
 
-  useEffect(() => { viewRef.current?.dispatch({ effects: refreshWritingPreview.of(null) }); }, [mainPreamble]);
+  useEffect(() => { viewRef.current?.dispatch({ effects: refreshWritingPreview.of(null) }); }, [mainPreamble, language]);
   useEffect(() => { if (!reviewing) viewRef.current?.dispatch({ effects: reviewWriting.of(null) }); }, [reviewing]);
 
   useEffect(() => {
@@ -543,7 +599,9 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     if (!view) return;
     if (props.value === view.state.doc.toString()) return;
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: props.value },
+      changes: textChange(view.state.doc.toString(), props.value),
+      annotations: Transaction.addToHistory.of(false),
+      effects: view.scrollSnapshot(),
     });
   }, [props.value]);
 
@@ -596,6 +654,8 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
   useImperativeHandle(
     ref,
     () => ({
+      renameLabel() { startRename(); },
+      applyProjectChanges(changes) { const view = viewRef.current; if (view) view.dispatch({ changes, annotations: Transaction.addToHistory.of(false), effects: view.scrollSnapshot() }); },
       toggleReview() { setReviewing(current => !current); },
       getPosition() { const view = viewRef.current; return view ? writingPosition(view, props.path) : null; },
       restorePosition(point) { const view = viewRef.current; if (view && point.file === props.path) restoreWritingPosition(view, point); },
@@ -852,8 +912,23 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
     view.focus();
   };
 
+  useEffect(() => {
+    const rename = (event: Event) => { const detail = (event as CustomEvent).detail; if (typeof detail === 'string') startRename(detail); };
+    window.addEventListener('texpro:rename-label', rename); return () => window.removeEventListener('texpro:rename-label', rename);
+  }, []);
   return (
     <>
+      {renaming && <form className="writing-rename" onSubmit={async event => {
+        event.preventDefault(); if (renaming.busy) return;
+        setRenaming({ ...renaming, busy: true, error: '' });
+        try { await propsRef.current.onRenameLabel(renaming.before, renaming.value.trim()); setRenaming(null); viewRef.current?.focus(); }
+        catch (error) { setRenaming(current => current && ({ ...current, busy: false, error: t(error instanceof Error ? error.message : String(error)) })); }
+      }}>
+        <label>{t('Rename label and references')}<input autoFocus onFocus={event => event.currentTarget.select()} aria-label={t('New label')} value={renaming.value} disabled={renaming.busy} onChange={event => setRenaming({ ...renaming, value: event.target.value, error: '' })} onKeyDown={event => { event.stopPropagation(); if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } if (event.key === 'Escape' && !renaming.busy) { event.preventDefault(); setRenaming(null); viewRef.current?.focus(); } }} /></label>
+        <button className="primary-btn" disabled={renaming.busy || !renaming.value.trim()}>{t(renaming.busy ? 'Updating…' : 'Rename')}</button>
+        <button type="button" className="secondary-btn" disabled={renaming.busy} onClick={() => { setRenaming(null); viewRef.current?.focus(); }}>{t('Cancel')}</button>
+        {renaming.error && <span role="alert">{renaming.error}</span>}
+      </form>}
       {reviewing && <WritingReviewBar root={props.root} file={props.path} saved={props.savedContent} onCompare={(source, label) => viewRef.current?.dispatch({ effects: reviewWriting.of({ source, label }) })} onClose={() => { setReviewing(false); viewRef.current?.dispatch({ effects: reviewWriting.of(null) }); viewRef.current?.focus(); }} />}
       <div className="editor-host" ref={hostRef} data-file={props.path} />
       {selectionBubble && createPortal(
@@ -862,13 +937,13 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
           style={{ left: selectionBubble.left, top: selectionBubble.top }}
           onMouseDown={(event) => event.preventDefault()}
         >
-          <button onClick={() => applyBubble('\\textbf{', '}')} title="Bold"><Bold size={12} /></button>
-          <button onClick={() => applyBubble('\\textit{', '}')} title="Italic"><Italic size={12} /></button>
-          <button onClick={() => applyBubble('\\texttt{', '}')} title="Code"><Code2 size={12} /></button>
+          <button onClick={() => applyBubble('\\textbf{', '}')} title={t('Bold')}><Bold size={12} /></button>
+          <button onClick={() => applyBubble('\\textit{', '}')} title={t('Italic')}><Italic size={12} /></button>
+          <button onClick={() => applyBubble('\\texttt{', '}')} title={t('Code')}><Code2 size={12} /></button>
           <span />
-          <button onClick={() => applyBubble('$', '$')} title="Inline math"><Sigma size={12} /></button>
-          <button onClick={() => applyBubble('\\cite{', '}')} title="Citation"><Quote size={12} /></button>
-          <button onClick={() => applyBubble('\\ref{', '}')} title="Reference"><Link2 size={12} /></button>
+          <button onClick={() => applyBubble('$', '$')} title={t('Inline math')}><Sigma size={12} /></button>
+          <button onClick={() => applyBubble('\\cite{', '}')} title={t('Citation')}><Quote size={12} /></button>
+          <button onClick={() => applyBubble('\\ref{', '}')} title={t('Reference')}><Link2 size={12} /></button>
         </div>,
         document.body,
       )}

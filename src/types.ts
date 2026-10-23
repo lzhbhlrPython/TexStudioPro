@@ -163,6 +163,7 @@ export interface Settings {
   showLineNumbers: boolean;
   spellcheck: boolean;
   smartPaste: boolean;
+  smartInput: boolean;
   pdfZoom: number;
 }
 

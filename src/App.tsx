@@ -1,3 +1,7 @@
+import { ChangeSet, Text, Transaction } from '@codemirror/state';
+import { renameLabels } from './lib/labelRename';
+import { requestText, TextRequestHost } from './components/TextRequest';
+import { rememberActiveFile, resumeFile } from './lib/writingResume';
 import { ensureTexPackages } from './lib/texDocument';
 import { writingNotes, type WritingNote } from './lib/writingNotes';
 import { figureWritingRange, writingFigure } from './lib/writingFigure';
@@ -37,6 +41,7 @@ import {
   Italic,
   LayoutTemplate,
   List,
+  Link2,
   MessageSquare,
   Moon,
   Music2,
@@ -210,6 +215,7 @@ export default function App() {
   const settingsRef = useRef(settings);
   const editorRef = useRef<EditorHandle | null>(null);
   const writingSessions = useRef<WritingSessions>(new Map());
+  const renameHistory = useRef<{ items: Array<{ before: Record<string, string>; after: Record<string, string>; edits: Record<string, ChangeSet>; context: Record<string, string> }>; cursor: number }>({ items: [], cursor: 0 });
   const writingTrail = useRef<WritingPosition[]>([]);
   const compiledSources = useRef<Record<string, string>>({});
   const toastId = useRef(0);
@@ -232,6 +238,7 @@ export default function App() {
   pdfBytesRef.current = pdfBytes;
   settingsRef.current = settings;
 
+  useEffect(() => { if (project?.root && activePath) rememberActiveFile(project.root, activePath); }, [project?.root, activePath]);
   const activeDoc = activePath ? docs[activePath] : undefined;
   const deferredContent = useDeferredValue(activeDoc?.content || '');
 
@@ -295,7 +302,7 @@ export default function App() {
   useEffect(() => {
     document.title = activeDoc
       ? `${activeDoc.dirty ? '• ' : ''}${activeDoc.path.split('/').pop()} — TeXPro`
-      : 'TeXPro — Visual LaTeX Workbench';
+      : 'TeXPro';
   }, [activeDoc]);
 
   useEffect(() => {
@@ -413,6 +420,7 @@ export default function App() {
       setGotoRequest(null);
       setPreviewFile(null);
       setActivePath(path);
+      rememberActiveFile(currentProject.root, path);
       if (!docsRef.current[path]) {
         setOpeningFile(path);
         try {
@@ -437,6 +445,51 @@ export default function App() {
     },
     [pushToast],
   );
+
+  const applyProjectTexts = useCallback((texts: Record<string, string>, edits: Record<string, ChangeSet>, original?: Record<string, string>) => {
+    const next = { ...docsRef.current };
+    for (const [file, content] of Object.entries(texts)) {
+      const existing = next[file], savedContent = existing?.savedContent ?? original?.[file] ?? content;
+      next[file] = { path: file, content, savedContent, dirty: content !== savedContent };
+      const cached = writingSessions.current.get(file);
+      if (cached && cached.state.doc.toString() !== content) {
+        if (cached.state.doc.toString() === (existing?.content ?? original?.[file])) cached.state = cached.state.update({ changes: edits[file], annotations: Transaction.addToHistory.of(false) }).state;
+        else writingSessions.current.delete(file);
+      }
+    }
+    // Map the live selection through individual label edits before publishing the buffers.
+    const active = activePathRef.current;
+    if (active && edits[active]) editorRef.current?.applyProjectChanges(edits[active]);
+    docsRef.current = next; setDocs(next);
+  }, []);
+  const projectHistory = useCallback((redo: boolean) => {
+    const history = renameHistory.current, item = history.items[redo ? history.cursor : history.cursor - 1];
+    if (!item) return false;
+    const expected = redo ? item.before : item.after;
+    if (Object.entries(item.context).some(([file, text]) => !(file in expected) && docsRef.current[file]?.content !== text) || Object.values(docsRef.current).some(doc => !(doc.path in item.context) && doc.dirty)) return false;
+    if (!Object.entries(expected).every(([file, content]) => docsRef.current[file]?.content === content)) return false;
+    const edits = redo ? item.edits : Object.fromEntries(Object.entries(item.edits).map(([file, change]) => [file, change.invert(Text.of(item.before[file].split('\n')))]));
+    applyProjectTexts(redo ? item.after : item.before, edits); history.cursor += redo ? 1 : -1;
+    return true;
+  }, [applyProjectTexts]);
+  const renameProjectLabel = useCallback(async (before: string, after: string) => {
+    const current = projectRef.current, generation = projectGeneration.current;
+    if (!current) throw new Error(tr('Open a project first'));
+    const files = flattenFiles(current.tree).filter(file => /\.(tex|ltx)$/i.test(file.path));
+    const entries = await Promise.all(files.map(async file => [file.path, docsRef.current[file.path]?.content ?? await window.texpro.readFile(file.path)] as const));
+    if (generation !== projectGeneration.current) throw new Error(tr('Project changed. Try again.'));
+    // Any typing while reading invalidates the proposal, rather than overwriting that typing.
+    const sources = Object.fromEntries(entries);
+    if (entries.some(([file, text]) => docsRef.current[file] && docsRef.current[file].content !== text)) throw new Error(tr('Document changed. Try again.'));
+    const result = renameLabels(sources, before, after);
+    const originals = Object.fromEntries(Object.keys(result.texts).map(file => [file, sources[file]]));
+    const edits = Object.fromEntries(Object.entries(result.edits).map(([file, changes]) => [file, ChangeSet.of(changes, sources[file].length)]));
+    applyProjectTexts(result.texts, edits, originals);
+    const history = renameHistory.current;
+    history.items = [...history.items.slice(0, history.cursor), { before: originals, after: result.texts, edits, context: Object.fromEntries(Object.values(docsRef.current).map(doc => [doc.path, doc.content])) }].slice(-30); history.cursor = history.items.length;
+    pushToast(tr('Label and references updated'), 'success', tr('{count} occurrences in {files} files', { count: result.count, files: Object.keys(result.texts).length }));
+    return result.count;
+  }, [applyProjectTexts, pushToast]);
 
   const saveDoc = useCallback(
     async (path: string, notify: boolean) => {
@@ -508,6 +561,7 @@ export default function App() {
       openRequest.current++;
       activePathRef.current = null;
       projectRef.current = next;
+      renameHistory.current = { items: [], cursor: 0 };
       writingSessions.current = new Map(); writingTrail.current = []; compiledSources.current = {};
       setProject(next);
       setDocs({});
@@ -574,9 +628,10 @@ export default function App() {
       }
 
       if (generation !== projectGeneration.current) return;
-      const target = next.rootFile || findFirstTex(next.tree);
+      const remembered = resumeFile(next.root);
+      const target = remembered && flattenFiles(next.tree).some(file => file.path === remembered && isTextPath(file.path)) ? remembered : next.rootFile || findFirstTex(next.tree);
       if (!target) {
-        pushToast(tr('No .tex file found'), 'info', 'Create a file with \\documentclass to begin.');
+        pushToast(tr('No .tex file found'), 'info', tr('Create a file with \\documentclass to begin.'));
         return;
       }
       await openFile(target);
@@ -789,7 +844,7 @@ export default function App() {
         pushToast(
           t('Compile failed'),
           'error',
-          result.error || `${result.errorCount || 0} errors · ${result.warningCount || 0} warnings`,
+          result.error || tr('{errors} errors · {warnings} warnings', { errors: result.errorCount || 0, warnings: result.warningCount || 0 }),
         );
       }
     } catch (error) {
@@ -816,6 +871,7 @@ export default function App() {
       projectGeneration.current++; syncGeneration.current++; inverseGeneration.current++; navigationGeneration.current++; openRequest.current++;
       compileRunId.current = null; compilingRef.current = false; setCompiling(false);
       projectRef.current = null; setProject(null);
+      renameHistory.current = { items: [], cursor: 0 };
       writingSessions.current = new Map(); writingTrail.current = []; compiledSources.current = {};
       docsRef.current = {}; setDocs({}); activePathRef.current = null; setActivePath(null); setOpeningFile(null);
       pdfPathRef.current = null; pdfBytesRef.current = null; setPdfPath(null); setPdfBytes(null); setPreviousPdfBytes(null);
@@ -1248,10 +1304,10 @@ export default function App() {
     async (path: string) => {
       const currentProject = projectRef.current;
       if (!currentProject) return;
-      const nextName = window.prompt(tr('Rename file'), basename(path));
+      const nextName = await requestText(tr('Rename file'), basename(path));
       if (!nextName || nextName === basename(path)) return;
       try {
-        if (activePathRef.current === path) await saveActive();
+        if (!(await saveAll())) return;
         const result = await window.texpro.renameProjectFile(currentProject.root, path, nextName);
         if (activePathRef.current === path) {
           const previous = path;
@@ -1267,26 +1323,26 @@ export default function App() {
           activePathRef.current = result.path;
         }
         await refreshProjectData();
-        pushToast(tr('File renamed'), 'success', `${result.updated} references updated`);
+        pushToast(tr('File renamed'), 'success', tr('{count} references updated', { count: result.updated }));
       } catch (failure) {
         pushToast(tr('Could not rename file'), 'error', String(failure));
       }
     },
-    [pushToast, refreshProjectData, saveActive],
+    [pushToast, refreshProjectData, saveAll],
   );
 
   const handleMoveDirectory = useCallback(
     async (dir: string) => {
       const currentProject = projectRef.current;
       if (!currentProject) return;
-      const nextName = window.prompt(tr('Rename folder'), basename(dir));
+      const nextName = await requestText(tr('Rename folder'), basename(dir));
       if (!nextName || nextName === basename(dir)) return;
       try {
         const impact = await window.texpro.projectImpact(currentProject.root, dir);
         if (impact.references > 0 || impact.assets > 0) {
           if (!window.confirm(`${t('Rename this folder?')}\n${basename(dir)} → ${nextName}\n\n${impact.files} ${t('files')} · ${impact.assets} ${t('assets')} · ${impact.references} ${t('references will be updated')}.`)) return;
         }
-        await saveActive();
+        if (!(await saveAll())) return;
         const result = await window.texpro.moveProjectDirectory(currentProject.root, dir, nextName);
         setDocs((current) => {
           const next: Record<string, OpenDoc> = {};
@@ -1306,12 +1362,12 @@ export default function App() {
           setActivePath(moved);
         }
         await refreshProjectData();
-        pushToast(tr('Directory moved'), 'success', `${result.updated} references updated`);
+        pushToast(tr('Directory moved'), 'success', tr('{count} references updated', { count: result.updated }));
       } catch (failure) {
         pushToast(tr('Could not move directory'), 'error', String(failure));
       }
     },
-    [pushToast, refreshProjectData, saveActive],
+    [pushToast, refreshProjectData, saveAll],
   );
 
   const handleCreateFile = useCallback(async (parent: string, name: string) => {
@@ -1340,13 +1396,13 @@ export default function App() {
     const currentProject = projectRef.current;
     if (!currentProject) return;
     const currentDir = relativePath(currentProject.root, dirname(file));
-    const target = window.prompt(tr('Target folder (relative to project)'), currentDir);
+    const target = await requestText(tr('Target folder (relative to project)'), currentDir, true);
     if (target === null) return;
     const targetDir = `${currentProject.root}/${target}`.replace(/\/+$/, '');
     try {
       const impact = await window.texpro.projectImpact(currentProject.root, file);
       if (!window.confirm(`${t('Move this file?')}\n${basename(file)} → ${target || '/'}\n\n${impact.references} ${t('references will be updated')}.`)) return;
-      await saveActive();
+      if (!(await saveAll())) return;
       const result = await window.texpro.moveProjectFile(currentProject.root, file, targetDir);
       setDocs((current) => {
         const doc = current[file];
@@ -1365,15 +1421,15 @@ export default function App() {
     } catch (failure) {
       pushToast(tr('Could not move file'), 'error', String(failure));
     }
-  }, [pushToast, refreshProjectData, saveActive, t]);
+  }, [pushToast, refreshProjectData, saveAll, t]);
 
   const handleDeleteFile = useCallback(async (file: string) => {
     const currentProject = projectRef.current;
     if (!currentProject) return;
     try {
       const impact = await window.texpro.projectImpact(currentProject.root, file);
-      if (!window.confirm(`${t('Delete this file?')}\n${basename(file)}\n\n${impact.references} ${t('references will break')}.\n${t('The file is moved to .texpro/trash.')}`)) return;
-      if (impact.assets > 0 && !window.confirm(t('This file is an asset. Delete it anyway?'))) return;
+      if (!window.confirm(`${t('Delete this file?')}\n${basename(file)}\n\n${impact.assets} ${t('assets')} · ${impact.references} ${t('references will break')}.\n${t('The file is moved to .texpro/trash.')}`)) return;
+      if (!(await saveAll())) return;
       await window.texpro.deleteProjectFile(currentProject.root, file);
       setDocs((current) => {
         if (!current[file]) return current;
@@ -1384,7 +1440,7 @@ export default function App() {
       if (activePathRef.current === file) {
         activePathRef.current = null;
         setActivePath(null);
-        const fallback = currentProject.rootFile || findFirstTex(currentProject.tree);
+        const fallback = flattenFiles(currentProject.tree).find(node => /\.(tex|ltx)$/i.test(node.path) && node.path !== file)?.path;
         if (fallback) await openFile(fallback);
       }
       await refreshProjectData();
@@ -1392,16 +1448,15 @@ export default function App() {
     } catch (failure) {
       pushToast(tr('Could not delete file'), 'error', String(failure));
     }
-  }, [openFile, pushToast, refreshProjectData]);
+  }, [openFile, pushToast, refreshProjectData, saveAll]);
 
   const handleDeleteFolder = useCallback(async (dir: string) => {
     const currentProject = projectRef.current;
     if (!currentProject) return;
     try {
       const impact = await window.texpro.projectImpact(currentProject.root, dir);
-      if (!window.confirm(`${t('Delete this folder?')}\n${basename(dir)}\n\n${impact.files} ${t('files')} · ${impact.assets} ${t('assets')} · ${impact.references} ${t('references will break')}.`)) return;
-      if (impact.assets > 0 && !window.confirm(t('This folder contains assets. Delete everything anyway?'))) return;
-      if (!window.confirm(t('This will move the folder to .texpro/trash. Continue?'))) return;
+      if (!window.confirm(`${t('Delete this folder?')}\n${basename(dir)}\n\n${impact.files} ${t('files')} · ${impact.assets} ${t('assets')} · ${impact.references} ${t('references will break')}.\n${t('The folder is moved to .texpro/trash.')}`)) return;
+      if (!(await saveAll())) return;
       await window.texpro.deleteProjectFolder(currentProject.root, dir);
       setDocs((current) => {
         const next: Record<string, OpenDoc> = {};
@@ -1414,7 +1469,7 @@ export default function App() {
       if (activePathRef.current && (activePathRef.current === dir || activePathRef.current.startsWith(dir + '/'))) {
         activePathRef.current = null;
         setActivePath(null);
-        const fallback = currentProject.rootFile || findFirstTex(currentProject.tree);
+        const fallback = flattenFiles(currentProject.tree).find(node => /\.(tex|ltx)$/i.test(node.path) && node.path !== dir && !node.path.startsWith(dir + '/'))?.path;
         if (fallback) await openFile(fallback);
       }
       await refreshProjectData();
@@ -1422,7 +1477,7 @@ export default function App() {
     } catch (failure) {
       pushToast(tr('Could not delete folder'), 'error', String(failure));
     }
-  }, [openFile, pushToast, refreshProjectData]);
+  }, [openFile, pushToast, refreshProjectData, saveAll]);
 
   const handleOpenFile = useCallback(
     (path: string) => {
@@ -1731,14 +1786,17 @@ export default function App() {
 
   const toggleVisual = useCallback(() => {
     setSettings((current) => ({ ...current, visual: !current.visual }));
+    editorRef.current?.focus();
   }, []);
 
   const toggleFocus = useCallback(() => {
     setSettings((current) => ({ ...current, focus: !current.focus }));
+    editorRef.current?.focus();
   }, []);
 
   const toggleTypewriter = useCallback(() => {
     setSettings((current) => ({ ...current, typewriter: !current.typewriter }));
+    editorRef.current?.focus();
   }, []);
 
   const toggleDayNight = useCallback(() => {
@@ -1858,11 +1916,12 @@ export default function App() {
 
   const paletteActions: PaletteAction[] = useMemo(
     () => [
+      { id: 'rename-label', label: t('Rename label and references'), shortcut: 'F2', group: 'Edit', icon: Link2, run: () => editorRef.current?.renameLabel() },
       { id: 'close-project', label: t('Close project and return to Welcome'), group: 'File', icon: FolderOpen, run: () => void handleCloseProject() },
       {
         id: 'compile',
         label: t('Compile document'),
-        detail: project ? `Build ${project.name}` : 'Open a project first',
+        detail: project ? t('Build {name}', { name: project.name }) : t('Open a project first'),
         shortcut: '⌘↩',
         group: 'Build',
         icon: Play,
@@ -1870,7 +1929,7 @@ export default function App() {
       },
       {
         id: 'save',
-        label: t('Save current file'),
+        label: t('Save project files'),
         shortcut: '⌘S',
         group: 'Build',
         icon: Save,
@@ -2117,7 +2176,7 @@ export default function App() {
       },
       {
         id: 'language-zh',
-        label: '界面语言：中文',
+        label: 'Interface language: Chinese',
         detail: 'Switch the interface to Chinese',
         group: 'Appearance',
         icon: Command,
@@ -2178,6 +2237,7 @@ export default function App() {
 
   const moreActions: MoreAction[] = useMemo(
     () => [
+      { id: 'rename-label', label: t('Rename label and references'), shortcut: 'F2', group: 'Edit', icon: Link2, run: () => editorRef.current?.renameLabel() },
       { id: 'close-project', label: 'Close project and return to Welcome', group: 'File', icon: FolderOpen, run: () => void handleCloseProject() },
       { id: 'review-writing', label: 'Review in writing', group: 'Tools', icon: History, run: () => editorRef.current?.toggleReview() },
       { id: 'return-writing', label: 'Back to writing position', group: 'Edit', icon: BookOpen, run: () => void returnToWriting() },
@@ -2358,6 +2418,9 @@ export default function App() {
                       };
                     });
                   }}
+                  readSource={async file => docsRef.current[file]?.content ?? await window.texpro.readFile(file)}
+                  onRenameLabel={renameProjectLabel}
+                  onProjectHistory={projectHistory}
                   onCursor={setCursor}
                   onSave={() => void saveActive()}
                   onCompile={() => void runCompile()}
@@ -2371,7 +2434,7 @@ export default function App() {
                 />
               ) : (
                 <div className="editor-loading">
-                  {openingFile ? `Opening ${openingFile.split('/').pop()}…` : 'Select a file to start editing.'}
+                  {openingFile ? t('Opening {name}…', { name: basename(openingFile) }) : t('Select a file to start editing.')}
                 </div>
               )}
             </div>
@@ -2419,6 +2482,7 @@ export default function App() {
         />
       )}
 
+      <TextRequestHost projectKey={project?.root || 'welcome'} />
       <CommandPalette
         open={paletteOpen}
         actions={paletteActions}

@@ -1,3 +1,4 @@
+import { formatShortcut } from '../i18n';
 import { useState } from 'react';
 import {
   AlertCircle,
@@ -97,7 +98,7 @@ export function TitleBar({
           <span>{t('Main file')}</span><strong>{project.rootFile?.slice(project.root.length + 1) || t('Choose main file')}</strong>
         </button>}
         <button className="workbench-tools-btn" onClick={onOpenPalette} title={t('Search tools (⌘K)')} aria-keyshortcuts="Meta+k Control+k">
-          <Search size={14} /><span>{t('Tools')}</span><kbd>⌘K</kbd>
+          <Search size={14} /><span>{t('Tools')}</span><kbd>{formatShortcut('⌘K')}</kbd>
         </button>
         {project && (compiling ? (
           <div className="compile-status">
@@ -136,7 +137,7 @@ export function TitleBar({
           className={`compile-btn subtle-compile ${compiling ? 'cancel-build' : ''}`}
           onClick={compiling ? onCancel : onCompile}
           disabled={!project}
-          title={compiling ? t('Cancel compilation') : `${t('Compile main file · saves all changes')} · ${project?.rootFile?.split('/').pop() || t('Choose main file')} (⌘↩)`}
+          title={compiling ? t('Cancel compilation') : `${t('Compile main file · saves all changes')} · ${project?.rootFile?.split('/').pop() || t('Choose main file')} (${formatShortcut('⌘↩')})`}
         >
           {compiling ? <Square size={11} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
           <span>{compiling ? t('Cancel') : t('Compile')}</span>

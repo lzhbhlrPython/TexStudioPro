@@ -133,7 +133,7 @@ export function VersionReview({ open, projectRoot, activeFile, activeContent, on
           </div>
           <div className="studio-header-actions">
             <span className="studio-engine ok">{gitManaged ? 'Git' : `${versions.length} ${t('snapshots')}`}</span>
-            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Close')}><X size={16} /></button>
           </div>
         </header>
 

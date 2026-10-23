@@ -131,8 +131,9 @@ Second paragraph.
     const origin = await js(`document.querySelector('.statusbar').textContent`);
     const point = await js(`(()=>{const e=${line('\\ref{sec:child}')};const range=document.createRange();range.selectNodeContents(e);const r=range.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}})()`);
     window.webContents.sendInputEvent({ type: 'mouseMove', ...point });
-    await wait(`!!document.querySelector('.cm-reference-info button')`);
-    await click(el('.cm-reference-info button'));
+    const sourceButton = `[...document.querySelectorAll('.cm-reference-info button')].find(button=>button.textContent.includes('chapter.tex:'))`;
+    await wait(`!!(${sourceButton})`);
+    await click(sourceButton);
     await wait(`document.querySelector('.titlebar-file-name').textContent==='chapter.tex'`);
     await open('return-writing'); await wait(`document.querySelector('.titlebar-file-name').textContent==='main.tex'`);
     await wait(`document.querySelector('.statusbar').textContent===${JSON.stringify(origin)}`);

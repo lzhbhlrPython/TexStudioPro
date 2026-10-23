@@ -1,26 +1,9 @@
-const MATH_MAP: Record<string, string> = {
-  'α': '\\alpha ', 'β': '\\beta ', 'γ': '\\gamma ', 'δ': '\\delta ', 'ε': '\\epsilon ',
-  'θ': '\\theta ', 'λ': '\\lambda ', 'μ': '\\mu ', 'π': '\\pi ', 'σ': '\\sigma ',
-  'φ': '\\phi ', 'ω': '\\omega ', 'Γ': '\\Gamma ', 'Δ': '\\Delta ', 'Σ': '\\Sigma ',
-  'Ω': '\\Omega ', '≤': '\\leq ', '≥': '\\geq ', '≠': '\\neq ', '≈': '\\approx ',
-  '×': '\\times ', '÷': '\\div ', '±': '\\pm ', '∞': '\\infty ', '∈': '\\in ',
-  '∑': '\\sum ', '∏': '\\prod ', '∫': '\\int ', '√': '\\sqrt ', '→': '\\to ',
-  '←': '\\leftarrow ', '⇒': '\\Rightarrow ', '⇔': '\\Leftrightarrow ',
-  '−': '-', '–': '--', '—': '---', '…': '\\ldots{}', '“': '"', '”': '"', '‘': "'", '’': "'",
-  '\u00a0': ' ', '\u200b': '', '\u200c': '', '\u200d': '', '\ufeff': '',
-};
+import { escapeProse, hasTexSource, markdownPaste, proseTable } from './writingFormats';
 
 export function cleanPlainPaste(text: string): string {
-  let value = text.replace(/\r\n?/g, '\n');
-  for (const [from, to] of Object.entries(MATH_MAP)) value = value.split(from).join(to);
-  return value
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{4,}/g, '\n\n\n');
+  return text.replace(/\r\n?/g, '\n');
 }
-
-function escapeLatex(value: string): string {
-  return value.replace(/([{}%$#&_])/g, '\\$1');
-}
+const escapeLatex = escapeProse;
 
 function inlineHtml(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return escapeLatex(node.textContent || '');
@@ -36,16 +19,24 @@ function inlineHtml(node: Node): string {
       return `\\textit{${inner()}}`;
     case 'code':
       return `\\texttt{${escapeLatex(element.textContent || '')}}`;
-    case 'a':
-      return `\\href{${escapeLatex(element.getAttribute('href') || '')}}{${inner()}}`;
+    case 'a': {
+      const href = element.getAttribute('href') || '';
+      return /^(https?:|mailto:)/i.test(href) ? `\\href{${escapeLatex(href)}}{${inner()}}` : inner();
+    }
+    case 'ul': case 'ol': {
+      const env = element.tagName.toLowerCase() === 'ol' ? 'enumerate' : 'itemize';
+      return `\n\\begin{${env}}\n${Array.from(element.children).filter(child => child.tagName.toLowerCase() === 'li').map(child => '  \\item ' + inlineHtml(child)).join('\n')}\n\\end{${env}}\n`;
+    }
     case 'br':
       return '\\\\\n';
     case 'sup':
       return `\\textsuperscript{${inner()}}`;
     case 'sub':
       return `\\textsubscript{${inner()}}`;
+    case 'script': case 'style': case 'noscript': case 'iframe':
+      return '';
     case 'img':
-      return `\\includegraphics[width=0.8\\linewidth]{${escapeLatex(element.getAttribute('src') || '')}}`;
+      return escapeLatex(element.getAttribute('alt') || '');
     default:
       return inner();
   }
@@ -63,6 +54,7 @@ function tableHtml(table: HTMLTableElement): string {
 export function cleanHtmlPaste(html: string): string {
   if (!html.trim()) return '';
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script,style,noscript,iframe').forEach(node => node.remove());
   const parts: string[] = [];
   const walk = (node: Node) => {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -80,13 +72,16 @@ export function cleanHtmlPaste(html: string): string {
     if (tag === 'h1') { parts.push(`\n\\section{${inlineHtml(element)}}\n`); return; }
     if (tag === 'h2') { parts.push(`\n\\subsection{${inlineHtml(element)}}\n`); return; }
     if (tag === 'h3') { parts.push(`\n\\subsubsection{${inlineHtml(element)}}\n`); return; }
+    if (/^h[4-6]$/.test(tag)) { parts.push(`\n\\${tag === 'h4' ? 'paragraph' : 'subparagraph'}{${inlineHtml(element)}}\n`); return; }
     if (tag === 'ul' || tag === 'ol') {
       const items = Array.from(element.children).filter((child) => child.tagName.toLowerCase() === 'li');
       const env = tag === 'ol' ? 'enumerate' : 'itemize';
       parts.push(`\n\\begin{${env}}\n${items.map((item) => `  \\item ${inlineHtml(item).trim()}`).join('\n')}\n\\end{${env}}\n`);
       return;
     }
-    if (tag === 'p' || tag === 'div' || tag === 'blockquote') {
+    if (tag === 'div' && Array.from(element.children).some(child => /^(p|div|h[1-6]|ul|ol|table|blockquote)$/.test(child.tagName.toLowerCase()))) { Array.from(element.childNodes).forEach(walk); return; }
+    if (tag === 'blockquote') { parts.push(`\\begin{quote}\n${inlineHtml(element).trim()}\n\\end{quote}`); return; }
+    if (tag === 'p' || tag === 'div') {
       parts.push(`\n${inlineHtml(element).trim()}\n`);
       return;
     }
@@ -98,10 +93,17 @@ export function cleanHtmlPaste(html: string): string {
 }
 
 export function smartPaste(text: string, html: string): string {
+  // Code copied from an editor must never be interpreted as rich prose.
+  if (hasTexSource(text)) return text;
   const plain = cleanPlainPaste(text);
-  if (html && /<(table|h[1-3]|p|ul|ol|li|strong|em)\b/i.test(html)) {
+  if (html && /<(table|h[1-6]|p|ul|ol|li|strong|b|em|i|code)\b/i.test(html)) {
+    // Merged cells cannot be flattened without losing meaning. Preserve the clipboard text.
+    if (/\b(?:rowspan|colspan)\s*=\s*["']?(?:[2-9]\d*|1\d+)/i.test(html)) return text;
     const converted = cleanHtmlPaste(html);
     if (converted.trim()) return converted;
   }
+  const rows = plain.trimEnd().split('\n').map(row => row.split('\t'));
+  if (rows.length > 1 && rows.length <= 500 && rows[0].length > 1 && rows[0].length <= 50 && rows.every(row => row.length === rows[0].length)) return proseTable(rows);
+  if (/^\s*\|?\s*:?-{3,}:?\s*\||^#{1,6} |^[-+*] |^\d+[.)] |^> |^```|\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`\n]+`|\[[^\]]+\]\(https?:/m.test(plain)) return markdownPaste(plain);
   return plain;
 }

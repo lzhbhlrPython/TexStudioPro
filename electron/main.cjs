@@ -350,7 +350,8 @@ function createWindow() {
   });
 
   if (isSmoke) {
-    if (process.env.TEXPRO_CONTINUITY_REGRESSION === '1') require('./continuity-regression.cjs')(mainWindow, { app, ipcMain });
+    if (process.env.TEXPRO_FLOW_REGRESSION === '1') require('./flow-regression.cjs')(mainWindow, { app, ipcMain });
+    else if (process.env.TEXPRO_CONTINUITY_REGRESSION === '1') require('./continuity-regression.cjs')(mainWindow, { app, ipcMain });
     else if (process.env.TEXPRO_ASSETS_REGRESSION === '1') require('./assets-regression.cjs')(mainWindow, { app, ipcMain });
     else if (process.env.TEXPRO_WRITING_REGRESSION === '1') require('./writing-regression.cjs')(mainWindow, { app, ipcMain });
     else if (process.env.TEXPRO_MUSIC_REGRESSION === '1') require('./music-regression.cjs')(mainWindow, { app, ipcMain });

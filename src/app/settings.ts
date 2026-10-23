@@ -25,6 +25,7 @@ export const defaultSettings: Settings = {
   showLineNumbers: true,
   spellcheck: true,
   smartPaste: true,
+  smartInput: true,
   pdfZoom: 0.9,
 };
 

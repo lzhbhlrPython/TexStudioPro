@@ -1,3 +1,4 @@
+import { formatShortcut } from '../i18n';
 import { BarChart3, LayoutTemplate, PenTool, X } from 'lucide-react';
 import type { Settings, ThemeName } from '../types';
 import { useI18n } from '../i18n';
@@ -103,7 +104,7 @@ export function SettingsPanel({
             <div className="setting-row compact-row">
               <span className="setting-copy">
                 <strong>{t('Toggle light / dark')}</strong>
-                <small>{t('Toggle light / dark theme')} · ⌘⇧L</small>
+                <small>{t('Toggle light / dark theme')} · {formatShortcut('⌘⇧L')}</small>
               </span>
               <button
                 className="secondary-btn"
@@ -164,9 +165,15 @@ export function SettingsPanel({
             />
             <Toggle
               label={t('Smart paste')}
-              detail={t('Convert rich HTML, Unicode math and smart punctuation into clean LaTeX')}
+              detail={t('Convert web content, Markdown and spreadsheet tables to TeX. Paste as plain text with the alternate paste shortcut.')}
               checked={settings.smartPaste}
               onChange={(value) => onChange({ smartPaste: value })}
+            />
+            <Toggle
+              label={t('Markdown input shortcuts')}
+              detail={t('Convert headings, lists and inline formatting while typing. Undo restores the original syntax.')}
+              checked={settings.smartInput}
+              onChange={(value) => onChange({ smartInput: value })}
             />
             <Toggle
               label={t('Spell check')}
@@ -261,16 +268,16 @@ export function SettingsPanel({
           <div className="settings-section">
             <div className="settings-section-title">{t('Shortcuts')}</div>
             <div className="shortcut-grid">
-              <span>{t('Compile')}</span><kbd>⌘ ↩</kbd>
-              <span>{t('Save')}</span><kbd>⌘ S</kbd>
-              <span>{t('Command palette')}</span><kbd>⌘ K</kbd>
-              <span>{t('Toggle light / dark')}</span><kbd>⌘ ⇧ L</kbd>
-              <span>{t('Visual mode')}</span><kbd>⌘ ⇧ M</kbd>
-              <span>{t('Focus mode')}</span><kbd>⌘ ⇧ F</kbd>
-              <span>{t('Typewriter scrolling')}</span><kbd>⌘ ⇧ T</kbd>
-              <span>{t('Toggle PDF preview')}</span><kbd>⌘ ⌥ P</kbd>
-              <span>{t('Toggle sidebar')}</span><kbd>⌘ \</kbd>
-              <span>{t('Forward search PDF')}</span><kbd>⌘ ⇧ J</kbd>
+              <span>{t('Compile')}</span><kbd>{formatShortcut('⌘ ↩')}</kbd>
+              <span>{t('Save')}</span><kbd>{formatShortcut('⌘ S')}</kbd>
+              <span>{t('Command palette')}</span><kbd>{formatShortcut('⌘ K')}</kbd>
+              <span>{t('Toggle light / dark')}</span><kbd>{formatShortcut('⌘ ⇧ L')}</kbd>
+              <span>{t('Visual mode')}</span><kbd>{formatShortcut('⌘ ⇧ M')}</kbd>
+              <span>{t('Focus mode')}</span><kbd>{formatShortcut('⌘ ⇧ F')}</kbd>
+              <span>{t('Typewriter scrolling')}</span><kbd>{formatShortcut('⌘ ⇧ T')}</kbd>
+              <span>{t('Toggle PDF preview')}</span><kbd>{formatShortcut('⌘ ⌥ P')}</kbd>
+              <span>{t('Toggle sidebar')}</span><kbd>{formatShortcut('⌘ \\')}</kbd>
+              <span>{t('Forward search PDF')}</span><kbd>{formatShortcut('⌘ ⇧ J')}</kbd>
             </div>
           </div>
         </div>

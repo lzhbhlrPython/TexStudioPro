@@ -9592,3 +9592,9 @@ button:disabled {
 .collab-scrim {
   backdrop-filter: blur(0px) !important;
 }
+
+.text-request-scrim { z-index: 1000; }
+.text-request { width: min(440px, calc(100vw - 40px)); padding: 24px; background: var(--panel); color: var(--text); border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,.18); }
+.text-request h2 { font-size: 18px; margin: 0 0 18px; }
+.text-request input { width: 100%; box-sizing: border-box; padding: 10px 12px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
+.text-request footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }

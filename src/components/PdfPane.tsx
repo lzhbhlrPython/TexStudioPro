@@ -688,7 +688,7 @@ export function PdfPane({
               <h3>{t('Could not display the PDF')}</h3>
               <p className="danger-text">{loadError}</p>
               <button className="primary-btn" onClick={onCompile}>
-                Recompile
+                {t('Recompile')}
               </button>
             </>
           ) : (

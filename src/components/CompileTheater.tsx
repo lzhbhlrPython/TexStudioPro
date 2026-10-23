@@ -41,7 +41,7 @@ export function CompileTheater({ open, compileResult, compiling, diagnostics, lo
           </div>
           <div className="studio-header-actions">
             <span className={`studio-engine ${ok ? 'ok' : compileResult ? 'failed' : ''}`}>{compiling ? <Loader2 size={11} className="spin" /> : ok ? <Check size={11} /> : <Terminal size={11} />}{compiling ? t('Running') : ok ? t('Passed') : compileResult ? t('Needs attention') : t('No build yet')}</span>
-            <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+            <button className="icon-btn" onClick={onClose} aria-label={t('Close')}><X size={16} /></button>
           </div>
         </header>
 

@@ -1,3 +1,4 @@
+import { formatShortcut } from '../i18n';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, type LucideIcon } from 'lucide-react';
@@ -51,7 +52,7 @@ export function MoreMenu({ open, actions, onClose }: Props) {
             const Icon = action.icon;
             return <div key={action.id}>
               {action.group && filtered[index - 1]?.group !== action.group && <div className="more-group">{t(action.group)}</div>}
-              <button data-action={action.id} className="more-row" onClick={() => run(action)}><Icon size={15} /><span>{t(action.label)}</span>{action.shortcut && <kbd>{action.shortcut}</kbd>}</button>
+              <button data-action={action.id} className="more-row" onClick={() => run(action)}><Icon size={15} /><span>{t(action.label)}</span>{action.shortcut && <kbd>{formatShortcut(action.shortcut)}</kbd>}</button>
             </div>;
           })}
         </div>
