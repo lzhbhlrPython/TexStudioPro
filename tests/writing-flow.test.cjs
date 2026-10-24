@@ -20,6 +20,38 @@ function load(file) {
 }
 const lib = name => load(path.join(__dirname, '../src/lib', name + '.ts'));
 
+test('new Chinese documents use TeX fonts across templates, imports and template design', () => {
+  const { builtinTemplates, fillTemplate } = lib('templates');
+  const { markdownToLatex, typstToLatex, defaultImportOptions } = lib('importers');
+  const { designTemplate, defaultTemplateDesign } = lib('templateDesigner');
+  const { parseDocumentSetup, packageCatalog, addPackage } = lib('packageManager');
+  const sources = [
+    fillTemplate(builtinTemplates.find(item => item.id === 'ctex-article').content, { title: '中文标题', author: '作者' }),
+    markdownToLatex('# 中文标题\n\n正文 **加粗**', defaultImportOptions).document,
+    typstToLatex('= 中文标题\n\n正文 *加粗*', defaultImportOptions).document,
+    designTemplate({ ...defaultTemplateDesign, base: 'ctexart', engine: 'xelatex' }),
+  ];
+  for (const source of sources) {
+    const setup = parseDocumentSetup(source);
+    assert.equal(setup.className, 'ctexart');
+    assert.ok(setup.classOptions.split(',').includes('fontset=fandol'));
+  }
+  const setup = addPackage({ className: 'article', classOptions: '', packages: [] }, packageCatalog.find(item => item.name === 'ctex'));
+  assert.ok(setup.packages[0].options.split(',').includes('fontset=fandol'));
+});
+
+test('package catalog does not add ctex to a ctex class or mistake a commented class for the real one', () => {
+  const packages = lib('packageManager');
+  const item = packages.packageCatalog.find(item => item.name === 'ctex');
+  const setup = packages.parseDocumentSetup('% \\documentclass{article}\n\\documentclass[fontset=fandol]{ctexart}\n\\begin{document}');
+  assert.equal(setup.className, 'ctexart');
+  assert.equal(packages.addPackage(setup, item), setup);
+  const original = '% \\documentclass{article}\n\\documentclass[fontset=fandol]{ctexart}\n\\begin{document}\n正文\n\\end{document}';
+  assert.equal(packages.buildDocumentSetup(original, setup), original);
+  const ordinary = { className: 'article', classOptions: '', packages: [] };
+  assert.equal(packages.addPackage(ordinary, item).packages[0].name, 'ctex');
+});
+
 test('Markdown shortcuts convert prose and place the cursor inside the new structure', () => {
   const { inputConversion } = lib('writingFormats');
   for (const [typed, expected] of [['# ', '\\section{}'], ['## ', '\\subsection{}'], ['- ', '\\begin{itemize}\n  \\item \n\\end{itemize}'], ['1. ', '\\begin{enumerate}\n  \\item \n\\end{enumerate}'], ['> ', '\\begin{quote}\n\n\\end{quote}'], ['**words**', '\\textbf{words}'], ['*words*', '\\emph{words}'], ['`x_%`', '\\texttt{x\\_\\%}']]) {

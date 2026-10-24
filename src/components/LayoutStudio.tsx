@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Columns3, LayoutTemplate, Ruler, Sparkles, X } from 'lucide-react';
 import type { Engine } from '../types';
 import { useI18n } from '../i18n';
+import { isCtexClass, texDocumentClass } from '../lib/texDocument';
 
 type Paper = 'a4paper' | 'letterpaper' | 'a5paper';
 type LanguageProfile = 'latin' | 'chinese' | 'japanese' | 'arabic' | 'russian';
@@ -82,14 +83,12 @@ const presets: Array<{ id: string; label: string; state: Partial<LayoutState> }>
 ];
 
 function generate(state: LayoutState, documentText: string): LayoutResult {
-  const classMatch = documentText.match(/\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}/);
-  const className = classMatch?.[1] || 'article';
-  const isCtexClass = /^ctex/.test(className);
+  const ctex = isCtexClass(texDocumentClass(documentText)?.name || 'article');
   const languageLines: string[] = [];
   let engine: Engine = 'pdflatex';
 
   if (state.language === 'chinese') {
-    if (!isCtexClass) languageLines.push('\\usepackage[UTF8]{ctex}');
+    if (!ctex) languageLines.push('\\usepackage[UTF8]{ctex}');
     engine = 'xelatex';
   } else if (state.language === 'japanese') {
     languageLines.push('\\usepackage{luatexja}');
@@ -134,8 +133,7 @@ export function LayoutStudio({ open, documentText, onClose, onApply }: Props) {
 
   useEffect(() => {
     if (!open) return;
-    const classMatch = documentText.match(/\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}/);
-    if (classMatch && /^ctex/.test(classMatch[1])) {
+    if (isCtexClass(texDocumentClass(documentText)?.name || '')) {
       setState({ ...defaults, language: 'chinese', lineSpacing: 1.5, fontSize: 12 });
     } else {
       setState(defaults);

@@ -78,6 +78,49 @@ export function texDocumentStart(text: string): TexRange | null {
   return null;
 }
 
+export function texDocumentClass(text: string) {
+  for (const command of texCommands(text)) {
+    if (command.name === 'begin') break;
+    if (command.name !== 'documentclass') continue;
+    let at = skipTexSpace(text, command.to);
+    const options = text[at] === '[' ? texGroup(text, at, '[', ']') : null;
+    if (options) at = skipTexSpace(text, options.to);
+    const group = texGroup(text, at);
+    if (group) return { name: text.slice(group.from + 1, group.to - 1).trim(), command, options, group };
+  }
+  return null;
+}
+
+export function isCtexClass(name: string): boolean {
+  return /^ctex(?:art|rep|book|beamer)$/.test(name);
+}
+
+/** Layout owns size, paper and columns; language, fonts and class-specific options stay intact. */
+export function updateLayoutClassOptions(text: string, replacement: string): string {
+  const declaration = texDocumentClass(text);
+  if (!declaration) return text;
+  const split = (value: string) => {
+    const parts: string[] = []; let part = '', depth = 0;
+    for (let at = 0; at < value.length; at++) {
+      const char = value[at];
+      if (char === '\\') { part += char + (value[++at] || ''); continue; }
+      if (char === '%') { const end = value.indexOf('\n', at); if (end < 0) break; at = end; part += ' '; continue; }
+      if (char === '{') depth++;
+      if (char === '}') depth--;
+      if (char === ',' && depth === 0) { if (part.trim()) parts.push(part.trim()); part = ''; }
+      else part += char;
+    }
+    if (part.trim()) parts.push(part.trim());
+    return parts;
+  };
+  const original = declaration.options ? text.slice(declaration.options.from + 1, declaration.options.to - 1) : '';
+  const managed = /^(?:\d+(?:\.\d+)?pt|(?:a\d|b\d|c\d|letter|legal|executive|ansi[a-e]|jisb\d)paper|onecolumn|twocolumn)$/;
+  const options = [...new Set([...split(original).filter(option => !managed.test(option)), ...split(replacement)])].join(',');
+  const from = declaration.options?.from ?? declaration.command.to;
+  const to = declaration.options?.to ?? from;
+  return text.slice(0, from) + `[${options}]` + text.slice(to);
+}
+
 export interface DiagramBlock extends TexRange { source: string; kind: 'tikz' | 'circuit' | 'chemistry' }
 export function diagramBlocks(text: string): DiagramBlock[] {
   const bodyStart = texDocumentStart(text)?.to ?? 0;
@@ -187,6 +230,7 @@ export function ensureTexPackages(text: string, packages: string[]): string {
   const document = [...texCommands(text)].find(c => c.name === 'begin' && text.slice(c.to).match(/^\s*\{document\}/));
   if (!document) return text;
   const installed = new Set<string>();
+  if (isCtexClass(texDocumentClass(text)?.name || '')) installed.add('ctex');
   for (const command of texCommands(text.slice(0, document.from))) {
     if (command.name !== 'usepackage' && command.name !== 'RequirePackage') continue;
     let at = skipTexSpace(text, command.to);
@@ -195,5 +239,5 @@ export function ensureTexPackages(text: string, packages: string[]): string {
     if (group) text.slice(group.from + 1, group.to - 1).split(',').forEach(p => installed.add(p.trim()));
   }
   const missing = [...new Set(packages)].filter(p => /^[a-zA-Z0-9-]+$/.test(p) && !installed.has(p));
-  return text.slice(0, document.from) + missing.map(p => `\\usepackage{${p}}\n`).join('') + text.slice(document.from);
+  return text.slice(0, document.from) + missing.map(p => `\\usepackage${p === 'ctex' ? '[UTF8,fontset=fandol]' : ''}{${p}}\n`).join('') + text.slice(document.from);
 }

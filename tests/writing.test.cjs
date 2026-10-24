@@ -10,6 +10,29 @@ vm.runInNewContext(ts.transpileModule(fs.readFileSync(require('node:path').join(
 }).outputText, context);
 const d = context.exports;
 
+test('ctex document classes supply ctex without duplicate package insertion', () => {
+  for (const name of ['ctexart', 'ctexrep', 'ctexbook', 'ctexbeamer']) {
+    const source = `\\documentclass[UTF8,fontset=fandol]{${name}}\n\\begin{document}\n中文\n\\end{document}`;
+    const output = d.ensureTexPackages(source, ['ctex', 'amsmath']);
+    assert.doesNotMatch(output, /\\usepackage(?:\[[^\]]*\])?\{ctex\}/);
+    assert.ok(output.includes('\\usepackage{amsmath}'));
+    assert.ok(output.includes('UTF8,fontset=fandol'));
+  }
+  const ordinary = '% \\documentclass{ctexart}\n\\documentclass{article}\n\\begin{document}\nText\n\\end{document}';
+  assert.ok(d.ensureTexPackages(ordinary, ['ctex']).includes('\\usepackage[UTF8,fontset=fandol]{ctex}'));
+  const configured = '\\documentclass{article}\n\\usepackage[fontset=windows]{ctex}\n\\begin{document}';
+  assert.equal(d.ensureTexPackages(configured, ['ctex']), configured);
+});
+
+test('page layout preserves font and language options while updating owned options', () => {
+  const source = '% \\documentclass[10pt]{article}\n\\documentclass[UTF8,fontset=fandol,scheme=plain,12pt,a5paper,twocolumn,custom={12pt,a5paper}]{ctexart}\n\\begin{document}\n中文\n\\end{document}';
+  const output = d.updateLayoutClassOptions(source, '11pt,a4paper');
+  assert.ok(output.startsWith('% \\documentclass[10pt]{article}'));
+  assert.ok(output.includes('\\documentclass[UTF8,fontset=fandol,scheme=plain,custom={12pt,a5paper},11pt,a4paper]{ctexart}'));
+  assert.equal(output.slice(output.indexOf('\\begin{document}')), source.slice(source.indexOf('\\begin{document}')));
+  assert.equal(d.updateLayoutClassOptions('\\documentclass{article}', '12pt,letterpaper'), '\\documentclass[12pt,letterpaper]{article}');
+});
+
 test('diagram ranges balance nested chemistry and skip commented and verbatim examples', () => {
   const text = String.raw`% \chemfig{not-content}
 \verb|\chemfig{example}|
