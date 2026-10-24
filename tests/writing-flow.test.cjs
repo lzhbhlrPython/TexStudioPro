@@ -20,6 +20,18 @@ function load(file) {
 }
 const lib = name => load(path.join(__dirname, '../src/lib', name + '.ts'));
 
+test('package catalog does not add ctex to a ctex class or mistake a commented class for the real one', () => {
+  const packages = lib('packageManager');
+  const item = packages.packageCatalog.find(item => item.name === 'ctex');
+  const setup = packages.parseDocumentSetup('% \\documentclass{article}\n\\documentclass[fontset=fandol]{ctexart}\n\\begin{document}');
+  assert.equal(setup.className, 'ctexart');
+  assert.equal(packages.addPackage(setup, item), setup);
+  const original = '% \\documentclass{article}\n\\documentclass[fontset=fandol]{ctexart}\n\\begin{document}\n正文\n\\end{document}';
+  assert.equal(packages.buildDocumentSetup(original, setup), original);
+  const ordinary = { className: 'article', classOptions: '', packages: [] };
+  assert.equal(packages.addPackage(ordinary, item).packages[0].name, 'ctex');
+});
+
 test('Markdown shortcuts convert prose and place the cursor inside the new structure', () => {
   const { inputConversion } = lib('writingFormats');
   for (const [typed, expected] of [['# ', '\\section{}'], ['## ', '\\subsection{}'], ['- ', '\\begin{itemize}\n  \\item \n\\end{itemize}'], ['1. ', '\\begin{enumerate}\n  \\item \n\\end{enumerate}'], ['> ', '\\begin{quote}\n\n\\end{quote}'], ['**words**', '\\textbf{words}'], ['*words*', '\\emph{words}'], ['`x_%`', '\\texttt{x\\_\\%}']]) {

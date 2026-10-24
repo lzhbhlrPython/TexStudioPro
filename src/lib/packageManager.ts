@@ -1,3 +1,5 @@
+import { isCtexClass, texDocumentClass } from './texDocument';
+
 export interface PackageSpec {
   name: string;
   options: string;
@@ -107,9 +109,9 @@ function splitPackageNames(value: string): string[] {
 }
 
 export function parseDocumentSetup(text: string): DocumentSetup {
-  const classMatch = /\\documentclass(?:\[([^\]]*)\])?\{([^}]+)\}/.exec(text);
-  const className = classMatch?.[2]?.trim() || 'article';
-  const classOptions = classMatch?.[1]?.trim() || '';
+  const declaration = texDocumentClass(text);
+  const className = declaration?.name || 'article';
+  const classOptions = declaration?.options ? text.slice(declaration.options.from + 1, declaration.options.to - 1).trim() : '';
   const begin = text.indexOf('\\begin{document}');
   const preamble = begin >= 0 ? text.slice(0, begin) : text;
   const packages: PackageSpec[] = [];
@@ -128,11 +130,11 @@ export function parseDocumentSetup(text: string): DocumentSetup {
 }
 
 export function buildDocumentSetup(text: string, setup: DocumentSetup): string {
-  const classMatch = /\\documentclass(?:\[[^\]]*\])?\{[^}]+\}/.exec(text);
-  if (!classMatch) return text;
+  const declaration = texDocumentClass(text);
+  if (!declaration) return text;
   const options = setup.classOptions.trim();
   const classLine = `\\documentclass${options ? `[${options}]` : ''}{${setup.className}}`;
-  let output = text.replace(classMatch[0], classLine);
+  let output = text.slice(0, declaration.command.from) + classLine + text.slice(declaration.group.to);
 
   const begin = output.indexOf('\\begin{document}');
   if (begin < 0) return output;
@@ -164,6 +166,7 @@ export function buildDocumentSetup(text: string, setup: DocumentSetup): string {
 }
 
 export function addPackage(setup: DocumentSetup, item: PackageCatalogItem): DocumentSetup {
+  if (item.name === 'ctex' && isCtexClass(setup.className)) return setup;
   if (setup.packages.some((pkg) => pkg.name === item.name)) return setup;
   return { ...setup, packages: [...setup.packages, { name: item.name, options: item.options || '' }] };
 }

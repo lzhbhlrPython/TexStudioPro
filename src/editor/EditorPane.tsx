@@ -55,7 +55,7 @@ import { completionAppearance, completionTheme } from './completionAppearance';
 import { composingWriting, leaveWritingBlock, stableWritingInput } from './writing';
 import { enterWritingTable } from './tableWidget';
 import { applyWriting, rememberWriting, restoreWriting, writingTargets, type WritingTarget } from './writingTargets';
-import { ensureTexPackages, texDocumentStart } from '../lib/texDocument';
+import { ensureTexPackages, texDocumentStart, updateLayoutClassOptions } from '../lib/texDocument';
 import { focusMode, typewriterMode, visualLatex, refreshWritingPreview, type VisualContext } from './visual';
 import type { CursorInfo, Diagnostic, ProjectSymbols, Settings, SourceJump } from '../types';
 import { dirname } from '../lib/latex';
@@ -866,10 +866,7 @@ export const EditorPane = forwardRef<EditorHandle, Props>(function EditorPane(pr
       applyLayout({ documentClassOptions, preambleBlock }) {
         const view = viewRef.current;
         if (!view) return;
-        let text = view.state.doc.toString();
-        text = text.replace(/\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}/, (_match, className) => {
-          return `\\documentclass[${documentClassOptions}]{${className}}`;
-        });
+        let text = updateLayoutClassOptions(view.state.doc.toString(), documentClassOptions);
         text = text.replace(/\n?% TeXPro layout begin[\s\S]*?% TeXPro layout end\n?/g, '\n');
         const managed = ['geometry', 'setspace', 'fancyhdr', 'ctex', 'luatexja', 'polyglossia', 'titling', 'microtype'];
         for (const pkg of managed) {
