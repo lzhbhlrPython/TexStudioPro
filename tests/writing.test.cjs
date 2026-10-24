@@ -14,12 +14,14 @@ test('ctex document classes supply ctex without duplicate package insertion', ()
   for (const name of ['ctexart', 'ctexrep', 'ctexbook', 'ctexbeamer']) {
     const source = `\\documentclass[UTF8,fontset=fandol]{${name}}\n\\begin{document}\n中文\n\\end{document}`;
     const output = d.ensureTexPackages(source, ['ctex', 'amsmath']);
-    assert.ok(!output.includes('\\usepackage{ctex}'));
+    assert.doesNotMatch(output, /\\usepackage(?:\[[^\]]*\])?\{ctex\}/);
     assert.ok(output.includes('\\usepackage{amsmath}'));
     assert.ok(output.includes('UTF8,fontset=fandol'));
   }
   const ordinary = '% \\documentclass{ctexart}\n\\documentclass{article}\n\\begin{document}\nText\n\\end{document}';
-  assert.ok(d.ensureTexPackages(ordinary, ['ctex']).includes('\\usepackage{ctex}'));
+  assert.ok(d.ensureTexPackages(ordinary, ['ctex']).includes('\\usepackage[UTF8,fontset=fandol]{ctex}'));
+  const configured = '\\documentclass{article}\n\\usepackage[fontset=windows]{ctex}\n\\begin{document}';
+  assert.equal(d.ensureTexPackages(configured, ['ctex']), configured);
 });
 
 test('page layout preserves font and language options while updating owned options', () => {

@@ -239,5 +239,5 @@ export function ensureTexPackages(text: string, packages: string[]): string {
     if (group) text.slice(group.from + 1, group.to - 1).split(',').forEach(p => installed.add(p.trim()));
   }
   const missing = [...new Set(packages)].filter(p => /^[a-zA-Z0-9-]+$/.test(p) && !installed.has(p));
-  return text.slice(0, document.from) + missing.map(p => `\\usepackage{${p}}\n`).join('') + text.slice(document.from);
+  return text.slice(0, document.from) + missing.map(p => `\\usepackage${p === 'ctex' ? '[UTF8,fontset=fandol]' : ''}{${p}}\n`).join('') + text.slice(document.from);
 }

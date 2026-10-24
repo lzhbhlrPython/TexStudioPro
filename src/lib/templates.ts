@@ -167,7 +167,7 @@ visual editor show you the final shape.
     category: 'Academic',
     engine: 'xelatex',
     builtin: true,
-    content: String.raw`\documentclass[UTF8,11pt]{ctexart}
+    content: String.raw`\documentclass[UTF8,fontset=fandol,11pt]{ctexart}
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}

@@ -83,7 +83,7 @@ export const packageCatalog: PackageCatalogItem[] = [
   { name: 'minted', description: 'Syntax-highlighted code via Pygments', category: 'Code' },
   { name: 'algorithm2e', description: 'Algorithm pseudocode', category: 'Code' },
   { name: 'algorithmicx', description: 'Algorithmic pseudocode', category: 'Code' },
-  { name: 'ctex', description: 'Chinese typesetting for non-ctex classes', category: 'Language', options: 'UTF8' },
+  { name: 'ctex', description: 'Chinese typesetting for non-ctex classes', category: 'Language', options: 'UTF8,fontset=fandol' },
   { name: 'fontspec', description: 'OpenType/TrueType fonts with XeLaTeX or LuaLaTeX', category: 'Language' },
   { name: 'polyglossia', description: 'Multilingual typesetting with XeLaTeX', category: 'Language' },
   { name: 'babel', description: 'Language-specific typography', category: 'Language' },

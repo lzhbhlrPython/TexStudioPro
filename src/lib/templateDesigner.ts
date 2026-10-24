@@ -56,6 +56,7 @@ export function designTemplate(design: TemplateDesign): string {
   const chinese = design.base === 'ctexart';
   const beamer = design.base === 'beamer';
   const options = [
+    chinese ? 'UTF8,fontset=fandol' : '',
     `${design.fontSize}pt`,
     design.pageSize,
     design.columns === 2 && !beamer ? 'twocolumn' : '',

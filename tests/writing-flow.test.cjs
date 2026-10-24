@@ -20,6 +20,26 @@ function load(file) {
 }
 const lib = name => load(path.join(__dirname, '../src/lib', name + '.ts'));
 
+test('new Chinese documents use TeX fonts across templates, imports and template design', () => {
+  const { builtinTemplates, fillTemplate } = lib('templates');
+  const { markdownToLatex, typstToLatex, defaultImportOptions } = lib('importers');
+  const { designTemplate, defaultTemplateDesign } = lib('templateDesigner');
+  const { parseDocumentSetup, packageCatalog, addPackage } = lib('packageManager');
+  const sources = [
+    fillTemplate(builtinTemplates.find(item => item.id === 'ctex-article').content, { title: '中文标题', author: '作者' }),
+    markdownToLatex('# 中文标题\n\n正文 **加粗**', defaultImportOptions).document,
+    typstToLatex('= 中文标题\n\n正文 *加粗*', defaultImportOptions).document,
+    designTemplate({ ...defaultTemplateDesign, base: 'ctexart', engine: 'xelatex' }),
+  ];
+  for (const source of sources) {
+    const setup = parseDocumentSetup(source);
+    assert.equal(setup.className, 'ctexart');
+    assert.ok(setup.classOptions.split(',').includes('fontset=fandol'));
+  }
+  const setup = addPackage({ className: 'article', classOptions: '', packages: [] }, packageCatalog.find(item => item.name === 'ctex'));
+  assert.ok(setup.packages[0].options.split(',').includes('fontset=fandol'));
+});
+
 test('package catalog does not add ctex to a ctex class or mistake a commented class for the real one', () => {
   const packages = lib('packageManager');
   const item = packages.packageCatalog.find(item => item.name === 'ctex');

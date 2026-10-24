@@ -93,7 +93,7 @@ function buildDocument(body: string, options: ImportOptions, warnings: string[])
   const title = options.title.trim();
   const author = options.author.trim();
   const preamble = documentClass === 'ctexart'
-    ? `\\documentclass[UTF8,11pt]{ctexart}
+    ? `\\documentclass[UTF8,fontset=fandol,11pt]{ctexart}
 \\usepackage{amsmath,amssymb}
 \\usepackage{graphicx}
 \\usepackage[margin=2.5cm]{geometry}
